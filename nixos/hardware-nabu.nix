@@ -140,13 +140,12 @@
 
   # ath10k_snoc hangs the platform on warm reboot if not unloaded first
   systemd.services.ath10k-shutdown = {
-    description = "Unload ath10k WiFi modules on shutdown";
-    before = [
-      "shutdown.target"
-      "reboot.target"
+    description = "Nabu - Disable WiFi Modules on Shutdown";
+    after = [
+      "network-online.target"
+      "graphical.target"
     ];
     wantedBy = [ "default.target" ];
-    unitConfig.DefaultDependencies = false;
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
