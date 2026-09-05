@@ -7,7 +7,6 @@
 # PARTLABEL=linux (ext4), ESP by PARTLABEL=esp.
 {
   config,
-  lib,
   pkgs,
   ...
 }:
@@ -70,6 +69,14 @@
     "ufs_qcom"
     "ufshcd_pltfrm"
   ];
+  # MSM DRM is built into the kernel, so module-closure based firmware
+  # discovery cannot see its runtime requests. Include the Adreno 640 blobs
+  # explicitly so the display stack can initialize before mounting rootfs.
+  boot.initrd.extraFirmwarePaths = [
+    "qcom/a630_sqe.fw"
+    "qcom/a640_gmu.bin"
+    "qcom/sm8150/xiaomi/nabu/a640_zap.mbn"
+  ];
 
   # == Filesystems ============================================================
   fileSystems."/" = {
@@ -95,69 +102,27 @@
   hardware.enableRedistributableFirmware = true;
   hardware.firmware = [ pkgs.xiaomi-nabu-firmware ];
 
-  # == Qualcomm remoteproc service stack ======================================
-  # qrtr-ns first, then pd-mapper, then rmtfs/tqftpserv/q6voiced.
-  systemd.services.qrtr-ns = {
-    description = "Qualcomm IPC router name service";
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      ExecStart = "${lib.getExe' pkgs.qrtr "qrtr-ns"}";
-      Restart = "always";
-      RestartSec = "1";
-    };
-  };
-
-  systemd.services.pd-mapper = {
-    description = "Qualcomm Protection Domain mapper";
-    after = [ "qrtr-ns.service" ];
-    requires = [ "qrtr-ns.service" ];
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      ExecStart = "${lib.getExe pkgs.pd-mapper}";
-      Restart = "always";
-      RestartSec = "1";
-    };
-  };
-
+  # == Qualcomm remoteproc services ==========================================
+  # Match Fedora's nabu preset: Linux 6.17 provides the QRTR name service and
+  # PD mapper in-kernel, while userspace only runs rmtfs and tqftpserv.
   systemd.services.rmtfs = {
-    description = "Qualcomm remote file system service";
-    after = [
-      "qrtr-ns.service"
-      "pd-mapper.service"
-    ];
-    requires = [ "qrtr-ns.service" ];
+    description = "Qualcomm remotefs service";
+    before = [ "NetworkManager.service" ];
     wantedBy = [ "multi-user.target" ];
+    unitConfig.ConditionPathExists = "/dev/qcom_rmtfs_mem1";
     serviceConfig = {
-      ExecStart = "${lib.getExe pkgs.rmtfs}";
+      ExecStart = "${pkgs.rmtfs}/bin/rmtfs -r -P -s";
       Restart = "always";
       RestartSec = "1";
     };
   };
 
   systemd.services.tqftpserv = {
-    description = "Qualcomm TFTP service (remoteproc firmware loader)";
-    after = [ "qrtr-ns.service" ];
-    requires = [ "qrtr-ns.service" ];
+    description = "QRTR TFTP service";
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
-      ExecStart = "${lib.getExe pkgs.tqftpserv}";
+      ExecStart = "${pkgs.tqftpserv}/bin/tqftpserv";
       Restart = "always";
-      RestartSec = "1";
-    };
-  };
-
-  systemd.services.q6voiced = {
-    description = "Qualcomm ADSP voice service";
-    after = [
-      "qrtr-ns.service"
-      "pd-mapper.service"
-    ];
-    requires = [ "qrtr-ns.service" ];
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      ExecStart = "${lib.getExe pkgs.q6voiced}";
-      Restart = "always";
-      RestartSec = "1";
     };
   };
 
