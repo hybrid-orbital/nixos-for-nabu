@@ -2,9 +2,6 @@
   lib,
   stdenv,
   fetchFromGitLab,
-  # linux-firmware provides qcom-sm8150 etc.; this package adds the
-  # device-specific files extracted from the Android vendor partition
-  linux-firmware,
 }:
 
 let
@@ -38,17 +35,17 @@ stdenv.mkDerivation {
 
     # GPU (Adreno 640)
     cp -a a630_sqe.fw a640_gmu.bin "$fw/qcom/"
-    cp -a a640_zap.mbn "$fw/qcom/" 2>/dev/null || true
+    cp -a a640_zap.mbn "$fw/qcom/sm8150/xiaomi/nabu/"
 
     # remoteproc / modem / video / wlan firmware
     cp -a adsp.mbn cdsp.mbn modem* venus.mbn wlanmdsp.mbn \
-      "$fw/qcom/sm8150/xiaomi/nabu/" 2>/dev/null || true
+      "$fw/qcom/sm8150/xiaomi/nabu/"
 
     # audio amplifiers (quad speakers)
-    cp -a cs35l41* "$fw/cirrus/" 2>/dev/null || true
+    cp -a cs35l41* "$fw/cirrus/"
 
     # touchscreen (Novatek NT36523)
-    cp -a novatek_nt36523_fw.bin "$fw/novatek/" 2>/dev/null || true
+    cp -a novatek_nt36523_fw.bin "$fw/novatek/"
 
     runHook postInstall
   '';
@@ -58,6 +55,8 @@ stdenv.mkDerivation {
     homepage = "https://gitlab.postmarketos.org/panpanpanpan/nabu-firmware";
     license = lib.licenses.unfreeRedistributableFirmware;
     platforms = lib.platforms.linux;
-    priority = 10;
+    # Lower numbers win in buildEnv. Device firmware must override generic
+    # linux-firmware when both provide files such as qcom/a630_sqe.fw.
+    priority = 4;
   };
 }
