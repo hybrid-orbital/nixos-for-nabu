@@ -15,6 +15,18 @@ let
     include "/etc/niri/config.kdl"
   '';
 
+  # Pin the DSI-1 panel to the KTZ8866 backlight device. Noctalia's automatic
+  # backlight-to-output matching only handles backlights whose sysfs `device`
+  # parent is the DRM connector (eDP/DP/HDMI); nabu's backlight is a separate
+  # I2C chip (ktz8866-backlight), so the auto path skips it and brightness is
+  # reported as unavailable. A dedicated file keeps user edits to config.toml
+  # intact (Noctalia merges every *.toml in this directory).
+  initialNoctaliaBrightnessConfig = pkgs.writeText "noctalia-nabu-brightness.toml" ''
+    [brightness.monitor.DSI-1]
+    backend = "backlight"
+    backlight_device = "ktz8866-backlight"
+  '';
+
   # Toggle the on-screen keyboard for tablet input.
   wvkbdToggle = pkgs.writeShellScriptBin "wvkbd-toggle" ''
     WVKBD_EXEC="wvkbd-mobintl"
@@ -38,6 +50,8 @@ in
     "d ${nabuUser.home}/.config 0700 nabu ${nabuUser.group} - -"
     "d ${niriConfigDir} 0700 nabu ${nabuUser.group} - -"
     "C ${niriConfigDir}/config.kdl 0600 nabu ${nabuUser.group} - ${initialUserConfig}"
+    "d ${nabuUser.home}/.config/noctalia 0700 nabu ${nabuUser.group} - -"
+    "C ${nabuUser.home}/.config/noctalia/90-nabu-brightness.toml 0600 nabu ${nabuUser.group} - ${initialNoctaliaBrightnessConfig}"
   ];
 
   # == Desktop shell ==========================================================
