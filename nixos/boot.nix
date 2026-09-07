@@ -89,11 +89,11 @@ in
 
   # Preserve logs from previous boots, with bounded disk and runtime use.
   services.journald = {
-    storage = "persistent";
-    extraConfig = ''
-      SystemMaxUse=256M
-      RuntimeMaxUse=64M
-      SyncIntervalSec=30s
-    '';
+    settings.Journal = {
+      storage = "persistent";
+      SystemMaxUse = "56M";
+      RuntimeMaxUse = "64M";
+      SyncIntervalSec = "30s";
+    };
   };
 }
