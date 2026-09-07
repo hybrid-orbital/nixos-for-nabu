@@ -7,7 +7,7 @@
 
 `nixos/niri.kdl` 管理布局、输入设备、窗口规则和快捷键；
 `nixos/niri.nix` 管理 NixOS 软件包、服务、登录界面及 KDL 构建校验。
-当前配置对应 flake.lock 中的 niri 26.04 和 Noctalia 5.0.0-beta.10。
+当前配置对应 flake.lock 中的 niri 26.04 和 Noctalia 5.0.1。
 
 ## 常用快捷键
 
@@ -105,7 +105,7 @@ systemd-boot 会在显示菜单前加载 ESP 的 `EFI/systemd/drivers/` 中对�
 
 参考：
 - [niri 输出配置](https://niri-wm.github.io/niri/Configuration%3A-Outputs.html)
-- [Noctalia Greeter 1.2.1 示例配置](https://github.com/noctalia-dev/noctalia-greeter/blob/v1.2.1/examples/greeter.toml)
+- [Noctalia Greeter 1.3.1 示例配置](https://github.com/noctalia-dev/noctalia-greeter/blob/v1.3.1/examples/greeter.toml)
 - [Linux fbcon 旋转](https://docs.kernel.org/fb/fbcon.html)
 - [systemd-boot 配置](https://github.com/systemd/systemd/blob/v261/man/loader.conf.xml)
 

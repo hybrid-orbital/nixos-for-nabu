@@ -50,12 +50,24 @@ in
   # == Login (noctalia-greeter -> greetd -> niri-session) ========================
   services.displayManager.noctalia-greeter = {
     enable = true;
+    # Upstream v1.3.1 lacks absolute-input mapping on transformed outputs and
+    # drops tablet (pen) events entirely. Two independent patches, one per
+    # issue: map-cursor-to-output fixes touch on rotated panels;
+    # tablet-as-pointer forwards pen events to wl_pointer. Pending upstream.
+    package = pkgs.noctalia-greeter.overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [
+        ../pkgs/noctalia-greeter/noctalia-greeter-map-cursor-to-output.patch
+        ../pkgs/noctalia-greeter/noctalia-greeter-tablet-as-pointer.patch
+      ];
+    });
     settings = {
       session.default = "niri";
       user.default = "nabu";
       idle.timeout = 0; # Keep the greeter display awake.
       keyboard.layout = "us";
       # The greeter has its own compositor and does not read niri's config.
+      # Pin its absolute inputs to the built-in panel as well as rotating it.
+      output.name = "DSI-1";
       output.transforms = "DSI-1:270";
     };
   };

@@ -1,0 +1,139 @@
+diff --git a/src/compositor/noctalia_compositor.c b/src/compositor/noctalia_compositor.c
+--- a/src/compositor/noctalia_compositor.c
++++ b/src/compositor/noctalia_compositor.c
+@@ -5,6 +5,8 @@
+ #include <ctype.h>
+ #include <libinput.h>
+ #include <limits.h>
++#include <linux/input-event-codes.h>
++#include <math.h>
+ #include <signal.h>
+ #include <stdarg.h>
+ #include <stdbool.h>
+@@ -38,6 +40,7 @@
+ #include <wlr/types/wlr_scene.h>
+ #include <wlr/types/wlr_seat.h>
+ #include <wlr/types/wlr_subcompositor.h>
++#include <wlr/types/wlr_tablet_tool.h>
+ #include <wlr/types/wlr_touch.h>
+ #include <wlr/types/wlr_viewporter.h>
+ #include <wlr/types/wlr_xcursor_manager.h>
+@@ -203,6 +206,12 @@ struct greeter_server {
+   struct wl_listener cursor_touch_motion;
+   struct wl_listener cursor_touch_cancel;
+   struct wl_listener cursor_touch_frame;
++  struct wl_listener cursor_tablet_axis;
++  struct wl_listener cursor_tablet_proximity;
++  struct wl_listener cursor_tablet_tip;
++  struct wl_listener tablet_tool_destroy;
++  struct wlr_tablet_tool* pointer_tool;
++  bool tablet_tip_down;
+   struct wl_listener request_set_cursor;
+   struct wl_listener request_set_selection;
+   struct wl_listener session_active;
+@@ -1621,6 +1634,81 @@ static void handle_cursor_motion(struct wl_listener* listener, void* data) {
+   pointer_focus(server, server->cursor->x, server->cursor->y);
+ }
+ 
++// The login UI consumes wl_pointer, not tablet-v2. Use the pen as a pointer
++// here; pressure and drawing remain the responsibility of the desktop session.
++static void tablet_pointer_button(struct greeter_server* server, uint32_t time_msec, bool pressed) {
++  if (server->tablet_tip_down == pressed) {
++    return;
++  }
++  server->tablet_tip_down = pressed;
++  wlr_seat_pointer_notify_button(server->seat, time_msec, BTN_LEFT,
++      pressed ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED);
++  wlr_seat_pointer_notify_frame(server->seat);
++}
++
++static void handle_tablet_tool_destroy(struct wl_listener* listener, void* data) {
++  (void)data;
++  struct greeter_server* server = wl_container_of(listener, server, tablet_tool_destroy);
++  tablet_pointer_button(server, 0, false);
++  wl_list_remove(&server->tablet_tool_destroy.link);
++  server->tablet_tool_destroy.notify = NULL;
++  server->pointer_tool = NULL;
++}
++
++static void tablet_pointer_motion(struct greeter_server* server, struct wlr_tablet* tablet, double x, double y) {
++  note_pointer_activity(server);
++  wlr_cursor_warp_absolute(server->cursor, &tablet->base, x, y);
++  pointer_focus(server, server->cursor->x, server->cursor->y);
++  wlr_seat_pointer_notify_frame(server->seat);
++}
++
++static void handle_cursor_tablet_proximity(struct wl_listener* listener, void* data) {
++  struct greeter_server* server = wl_container_of(listener, server, cursor_tablet_proximity);
++  struct wlr_tablet_tool_proximity_event* event = data;
++  if (event->state == WLR_TABLET_TOOL_PROXIMITY_OUT) {
++    if (event->tool == server->pointer_tool) {
++      tablet_pointer_button(server, event->time_msec, false);
++      wl_list_remove(&server->tablet_tool_destroy.link);
++      server->tablet_tool_destroy.notify = NULL;
++      server->pointer_tool = NULL;
++    }
++    return;
++  }
++  if (server->pointer_tool != event->tool) {
++    tablet_pointer_button(server, event->time_msec, false);
++    if (server->pointer_tool != NULL) {
++      wl_list_remove(&server->tablet_tool_destroy.link);
++    }
++    server->pointer_tool = event->tool;
++    server->tablet_tool_destroy.notify = handle_tablet_tool_destroy;
++    wl_signal_add(&event->tool->events.destroy, &server->tablet_tool_destroy);
++  }
++  tablet_pointer_motion(server, event->tablet, event->x, event->y);
++}
++
++static void handle_cursor_tablet_axis(struct wl_listener* listener, void* data) {
++  struct greeter_server* server = wl_container_of(listener, server, cursor_tablet_axis);
++  struct wlr_tablet_tool_axis_event* event = data;
++  if (event->tool != server->pointer_tool || !(event->updated_axes & (WLR_TABLET_TOOL_AXIS_X | WLR_TABLET_TOOL_AXIS_Y))) {
++    return;
++  }
++  // wlroots rotates the axis flags too. Preserve an axis that did not change.
++  tablet_pointer_motion(server, event->tablet,
++      event->updated_axes & WLR_TABLET_TOOL_AXIS_X ? event->x : NAN,
++      event->updated_axes & WLR_TABLET_TOOL_AXIS_Y ? event->y : NAN);
++}
++
++static void handle_cursor_tablet_tip(struct wl_listener* listener, void* data) {
++  struct greeter_server* server = wl_container_of(listener, server, cursor_tablet_tip);
++  struct wlr_tablet_tool_tip_event* event = data;
++  if (event->tool != server->pointer_tool) {
++    return;
++  }
++  note_activity(server);
++  tablet_pointer_motion(server, event->tablet, event->x, event->y);
++  tablet_pointer_button(server, event->time_msec, event->state == WLR_TABLET_TOOL_TIP_DOWN);
++}
++
+ static void handle_cursor_motion_absolute(struct wl_listener* listener, void* data) {
+   struct greeter_server* server = wl_container_of(listener, server, cursor_motion_absolute);
+   struct wlr_pointer_motion_absolute_event* event = data;
+@@ -2119,6 +2207,10 @@ static void cleanup_server_listeners(struct greeter_server* server) {
+   remove_listener_if_set(&server->cursor_touch_motion);
+   remove_listener_if_set(&server->cursor_touch_cancel);
+   remove_listener_if_set(&server->cursor_touch_frame);
++  remove_listener_if_set(&server->cursor_tablet_axis);
++  remove_listener_if_set(&server->cursor_tablet_proximity);
++  remove_listener_if_set(&server->cursor_tablet_tip);
++  remove_listener_if_set(&server->tablet_tool_destroy);
+   remove_listener_if_set(&server->request_set_cursor);
+   remove_listener_if_set(&server->request_set_selection);
+   remove_listener_if_set(&server->session_active);
+@@ -2298,6 +2390,12 @@ int main(int argc, char** argv) {
+   wl_signal_add(&server.cursor->events.touch_cancel, &server.cursor_touch_cancel);
+   server.cursor_touch_frame.notify = handle_cursor_touch_frame;
+   wl_signal_add(&server.cursor->events.touch_frame, &server.cursor_touch_frame);
++  server.cursor_tablet_axis.notify = handle_cursor_tablet_axis;
++  wl_signal_add(&server.cursor->events.tablet_tool_axis, &server.cursor_tablet_axis);
++  server.cursor_tablet_proximity.notify = handle_cursor_tablet_proximity;
++  wl_signal_add(&server.cursor->events.tablet_tool_proximity, &server.cursor_tablet_proximity);
++  server.cursor_tablet_tip.notify = handle_cursor_tablet_tip;
++  wl_signal_add(&server.cursor->events.tablet_tool_tip, &server.cursor_tablet_tip);
+   server.request_set_cursor.notify = handle_request_set_cursor;
+   wl_signal_add(&server.seat->events.request_set_cursor, &server.request_set_cursor);
+   server.request_set_selection.notify = handle_request_set_selection;
