@@ -9,7 +9,10 @@
 
 | 输出 | 内容 |
 | --- | --- |
-| `nixosConfigurations.nabu` | ARM64 原生 NixOS 配置，包含 niri + Noctalia |
+| `nixosConfigurations.nabu` / `ext4-nabu` | ARM64 原生 ext4 配置，包含 niri + Noctalia |
+| `nixosConfigurations.impermanent-nabu` | tmpfs root + Btrfs 持久化配置 |
+| `packages.<system>.ext4-nabu-{esp,rootfs}` | ext4 配置的配套镜像 |
+| `packages.<system>.impermanent-nabu-{esp,rootfs}` | 无状态配置的配套 ESP 和 Btrfs 镜像 |
 | `packages.<system>.nabu-esp` | `esp.img` 和 `efi-files.zip` |
 | `packages.<system>.nabu-rootfs` | 默认不压缩的 `nabu-rootfs.ext4.img` |
 | `packages.<system>.nabu-kernel` | sm8150 内核 |
@@ -38,11 +41,15 @@ bash scripts/build-image.sh
 # 或只导出一种镜像
 bash scripts/build-image.sh esp
 bash scripts/build-image.sh rootfs
+# 无状态配置的配套镜像
+bash scripts/build-image.sh all impermanent
 ```
 
 脚本在新的 `result-images/build-*` 目录保存镜像与 `SHA256SUMS`，也可通过 `OUT_DIR`
 指定新目录。它拒绝覆盖同名产物。脚本按顺序构建两个输出，期间应保持工作树不变。
 这是本地构建流程；目前没有已经落地的 GitHub Actions 镜像流水线。
+
+存储布局、自定义持久化目录和无状态版本的使用说明见[存储方案](storage.md)。
 
 ## 原生构建与交叉构建
 
@@ -86,7 +93,7 @@ rootfs 镜像由系统闭包加 `nabu.image.rootFsExtraSize` 余量构成，默�
 当前配置设置 `nabu.image.compress = false`，便于直接刷写。release 的 zstd 压缩和分卷
 是发布包装，与 flake 默认输出不同。
 
-压缩降低下载体积，不会减少解压后的 ext4 文件系统或设备上的系统闭包。
+压缩降低下载体积，不会减少解压后的文件系统或设备上的系统闭包。
 缩减 rootfs 应先测量大依赖、固件、桌面组件和构建工具的闭包，再决定如何拆分变体。
 构建机上可先查看默认原生配置闭包（x86_64 上运行此命令不会自动改为交叉配置）：
 

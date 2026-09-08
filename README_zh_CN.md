@@ -11,6 +11,8 @@
 本分支在此基础上推进验证、Nixpkgs 原生启动管理和日常桌面使用。
 本项目离不开诸多其它项目的工作与贡献。有关的项目与贡献者详见下方致谢。
 
+存储版本、持久化目录与构建方式见[存储方案](docs/storage.md)。
+
 ## 当前发布
 
 [**v0.1.0-alpha**](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v0.1.0-alpha)
@@ -63,13 +65,13 @@ sudo systemctl start NetworkManager
 | --- | --- |
 | systemd-boot 原生 generation 菜单、Android 入口 | 缩减镜像体积、完善发布验证 |
 | niri + Noctalia 桌面及登录界面 | TTY、KDE 等独立配置变体 |
-| 可刷写 ext4 rootfs 和 ESP 镜像 | Btrfs 与 Impermanence 的存储设计 |
+| ext4 镜像和实验性的 tmpfs root + Btrfs 版本 | 持久化与恢复的实机验证 |
 | ARM64 原生构建与 x86_64 交叉构建入口 | 交叉构建兼容性和缓存体验 |
 | 横屏菜单、登录界面、桌面及数位笔输出映射 | 熄屏、休眠、唤醒和其他硬件适配 |
 | 本地镜像导出脚本 | GitHub Actions 自动构建与发布设施 |
 
-交叉构建入口存在不等于任意配置均能交叉编译；目前也没有 TTY/KDE/Btrfs 等现成
-flake 输出。[设备状态](docs/device-status.md)与[路线图](docs/roadmap.md)区分已实现与计划工作。
+交叉构建入口存在不等于任意配置均能交叉编译；目前也没有 TTY/KDE 等现成
+flake 输出，新增的 Btrfs 版本仍需实机验证。[设备状态](docs/device-status.md)与[路线图](docs/roadmap.md)区分已实现与计划工作。
 
 ## 安装发布镜像
 
@@ -107,8 +109,9 @@ fastboot reboot
 是笔误。** 如果无法查询或访问这些分区，先检查设备模式与布局，不要猜测其他分区名。
 首次启动会将 ext4 扩展到已有 `linux` 分区大小，不会调整分区表。
 
-进入 Noctalia 登录界面后，默认用户和初始密码均为 **`nabu`**，请登录后运行 `passwd`
-修改密码。当前还启用了 **TTY 自动登录和 SSH 密码认证**，长期使用时应按需要修改配置；
+进入 Noctalia 登录界面后，默认用户和初始密码均为 **`nabu`**。ext4 版本登录后运行
+`passwd` 修改密码；无状态版本使用[声明式密码](docs/storage.md#无状态版本的密码)。
+当前还启用了 **TTY 自动登录和 SSH 密码认证**，长期使用时应按需要修改配置；
 修改密码不会关闭 TTY 自动登录。可用 `systemctl --failed` 检查失败服务，
 `findmnt /boot/efi` 检查 ESP 挂载，`bootctl list` 检查启动项。
 
@@ -133,7 +136,7 @@ Project Aloha UEFI / 现有 DBKP 启动环境
 因此可以从菜单恢复先前的系统配置。外部 DTB 已在当前关闭 Secure Boot 的固件环境验证可用，
 UKI 不再是传递设备树的必要条件。
 
-首次 ESP 仍由本项目的 `mkEsp` 逻辑组装，只有一个初始 generation；日常 rebuild 才由
+首次 ESP 仍由本项目的 `system.build.esp-image` 逻辑组装，只有一个初始 generation；日常 rebuild 才由
 nixpkgs 的 systemd-boot 安装器部署并管理各代。初始文件与旧 UKI/rEFInd 文件不一定会
 被自动清理，手动删除前须确认没有保留的条目引用。更完整的实现见[技术说明](docs/architecture.md)。
 
@@ -209,7 +212,7 @@ ESP 和 rootfs 必须配套构建，不能混用不同提交、配置或原生/�
 - **构建与缓存：** 改善交叉构建入口和错误提示，记录兼容性，探索 ARM64 原生 builder
   与二进制缓存，降低平板首次 rebuild 的成本。
 - **系统与体积：** 测量闭包和大依赖，缩减 rootfs，拆分公共设备模块与 TTY、niri、KDE
-  配置；探索 Btrfs 子卷与 Impermanence 的持久化设计，同时补齐镜像生成和恢复流程。
+  配置；验证新增的 Btrfs/Impermanence 版本在平板上的行为，完善恢复流程。
 - **设备适配：** 排查偶发启动失败和 Wi-Fi MAC 地址跨重启变化，推进相机支持；
   探索内核选项，完成电源键、熄屏、低功耗休眠与唤醒，并测量实际待机功耗。
 - **CI 与发布：** 建设 GitHub Actions 求值检查和镜像构建，完善缓存、校验值、压缩分卷与
@@ -217,7 +220,7 @@ ESP 和 rootfs 必须配套构建，不能混用不同提交、配置或原生/�
 - **文档与协作：** 保持中英文首页、安装步骤与设备状态同步，为新配置提供可复现的用法和
   验证记录，逐步补齐详细指南的英文版本。
 
-这些是计划工作，目前没有独立 TTY/KDE/Btrfs 输出或自动镜像 CI。
+这些是计划工作，目前没有独立 TTY/KDE 输出或自动镜像 CI。
 欢迎提交带有配置、日志和验证结果的改进，具体目标见[路线图](docs/roadmap.md)，
 提交与测试约定见[贡献指南](CONTRIBUTING.md)。
 

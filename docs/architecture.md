@@ -58,12 +58,12 @@ Android 启动程序和 GopRotate 通过 `extraFiles` 部署，Android 菜单由
 文件保留与清理由 nixpkgs 的 systemd-boot 安装器管理，仍需关注 ESP 可用空间。
 
 回滚的范围是 NixOS 系统配置和包闭包，不包含 `/home`、数据库或其他可变数据，
-也不是整个 UEFI 固件的回滚。Btrfs 快照与 Impermanence 是不同层次的存储设计，
-目前尚未实现。
+也不是整个 UEFI 固件的回滚。可选的 tmpfs root + Btrfs 方案见[存储说明](storage.md)，
+它保留选定状态，不自动创建数据快照。
 
 ## 首次镜像和日常更新的区别
 
-[`flake.nix`](../flake.nix) 的 `mkEsp` 在普通构建环境中组装初始 FAT 镜像：
+[`nixos/images/esp.nix`](../nixos/images/esp.nix) 的 `system.build.esp-image` 在普通构建环境中组装初始 FAT 镜像：
 
 | 初始 ESP 路径 | 内容 |
 | --- | --- |
@@ -79,8 +79,9 @@ Android 启动程序和 GopRotate 通过 `extraFiles` 部署，Android 菜单由
 `nixos-nabu.conf` 或 `/nixos/kernel`。初始镜像的文件也不能假定会全部被该安装器
 自动清理；确认不再有启动条目引用后才能手动处理。
 
-[`nixos/rootfs-image.nix`](../nixos/rootfs-image.nix) 将同一个系统闭包复制到 ext4，
-创建 `/init` 和初始 profile 链接，并在首次启动注册 Nix store 数据库。
+[`nixos/images/rootfs.nix`](../nixos/images/rootfs.nix) 将同一个系统闭包放进选定的
+ext4 或 Btrfs 布局，创建初始 profile 链接，并在首次启动注册 Nix store 数据库。
+两个镜像入口都在 `config.system.build` 下，flake 只组合配置和导出产物。
 ESP 和 rootfs 必须来自同一套配置求值，不能随意混用两个发布或原生/交叉构建的产物。
 
 ## 代码入口
