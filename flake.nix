@@ -3,17 +3,21 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    impermanence.url = "github:nix-community/impermanence";
+    impermanence.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
     {
       self,
       nixpkgs,
+      impermanence,
     }:
     let
       lib = nixpkgs.lib;
       variants = {
         ext4 = ./nixos/storage/ext4.nix;
+        impermanent = ./nixos/storage/impermanent.nix;
       };
       mkSystem =
         variant: buildSystem:
@@ -23,6 +27,7 @@
             ./nixos/configuration.nix
             variants.${variant}
           ]
+          ++ lib.optional (variant == "impermanent") impermanence.nixosModules.impermanence
           ++ lib.optional (buildSystem != null) { nixpkgs.buildPlatform.system = buildSystem; };
         };
     in
