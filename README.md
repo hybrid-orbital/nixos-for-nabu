@@ -31,6 +31,7 @@ that every hardware feature is supported.
 | Power key | Deliberately ignored pending usable screen-off and suspend/resume support |
 | Boot reliability | Boot sometimes fails; the cause is still under investigation |
 | Wi-Fi MAC address | A new random address is selected on every reboot; it does not remain stable across boots |
+| Wi-Fi hangs after idle | After long idle, ath10k_snoc detects an unresponsive firmware/WMI, recovery fails repeatedly, and Wi-Fi stops working until the driver is reloaded |
 | Image size | The rootfs is large; reducing the closure and splitting configurations are priorities |
 
 The changing Wi-Fi MAC address may affect MAC-based DHCP reservations and network
@@ -39,6 +40,32 @@ verified. Other hardware needs fuller test records; enabling a driver in the
 configuration is not evidence of hardware validation. When reporting a problem,
 include the image version, firmware version, reproduction steps and logs;
 distinguish cold boots from warm reboots.
+
+Wi-Fi may hang after a long idle period: `ath10k_snoc` (WCN3990) detects an
+unresponsive firmware/WMI, attempts automatic recovery, and after repeated
+failures gives up (wedged state), leaving Wi-Fi unusable. The `WARN_ON` in
+`mac.c` seen in dmesg is the result of the failed recovery, not the root cause.
+The root cause is still under investigation and is suspected to relate to SNOC
+power management / WMI timeouts, not the firmware version (firmware is loaded
+via TQFTP and is already HL 3.2.0). Reload the driver manually to recover:
+
+```sh
+# Option 1 (recommended): rebind the platform device, no extra tools needed
+ls /sys/bus/platform/drivers/ath10k_snoc/          # check the device name (usually 18800000.wifi)
+nmcli radio wifi off
+echo 18800000.wifi | sudo tee /sys/bus/platform/drivers/ath10k_snoc/unbind
+echo 18800000.wifi | sudo tee /sys/bus/platform/drivers/ath10k_snoc/bind
+nmcli radio wifi on
+
+# Option 2: unload/reload the kernel module (modprobe is not on the default PATH; run `nix shell nixpkgs#kmod` first)
+sudo systemctl stop NetworkManager
+sudo modprobe -r ath10k_snoc
+sudo modprobe ath10k_snoc
+sudo systemctl start NetworkManager
+```
+
+Restarting NetworkManager alone does not recover; the driver must be re-probed
+(unbind/bind or module reload).
 
 ### Available and planned features
 

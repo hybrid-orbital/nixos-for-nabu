@@ -26,12 +26,36 @@ niri + Noctalia 镜像可用，但仍缺乏更充分的测试，并不意味着�
 | 电源键 | 当前被刻意忽略，实用的熄屏、休眠和唤醒方案仍需适配 |
 | 启动可靠性 | 偶尔启动失败，原因仍待排查 |
 | Wi-Fi MAC 地址 | 每次重启都会随机选择新的地址，不能依赖跨重启保持固定 MAC |
+| Wi-Fi 久置卡死 | 空闲较久后 ath10k_snoc 检测到固件/WMI 无响应并反复恢复失败，Wi-Fi 失效，需手动重载驱动 |
 | 镜像体积 | 当前 rootfs 较大，缩减闭包与拆分配置是后续重点 |
 
 Wi-Fi MAC 地址变化可能影响基于 MAC 的 DHCP 地址预留和网络准入规则；
 目前仅确认这一现象，尚未确定原因或验证修复方法。其他硬件也需要更完整的测试记录，
 不能仅凭配置中启用驱动就认为已经验证。报告问题时请附上镜像版本、固件版本、
 重现步骤和日志；启动失败请区分冷启动与热重启。
+
+Wi-Fi 在长时间空闲后可能卡死：`ath10k_snoc`（WCN3990）检测到固件/WMI 无响应后会尝试
+自动恢复，连续失败后驱动放弃（进入 wedged 状态），Wi-Fi 不再可用。dmesg 中 `mac.c`
+的 `WARN_ON` 是恢复失败后的结果，不是根因；根因目前仍在排查，疑似与 SNOC 电源管理 /
+WMI 超时有关，与固件版本无关（固件经 TQFTP 加载，已是较新的 HL 3.2.0）。卡死后可
+手动重载驱动恢复：
+
+```sh
+# 方法一（推荐）：重新绑定平台设备，不需要额外工具
+ls /sys/bus/platform/drivers/ath10k_snoc/          # 确认设备名（通常为 18800000.wifi）
+nmcli radio wifi off
+echo 18800000.wifi | sudo tee /sys/bus/platform/drivers/ath10k_snoc/unbind
+echo 18800000.wifi | sudo tee /sys/bus/platform/drivers/ath10k_snoc/bind
+nmcli radio wifi on
+
+# 方法二：卸载/重载内核模块
+sudo systemctl stop NetworkManager
+sudo modprobe -r ath10k_snoc
+sudo modprobe ath10k_snoc
+sudo systemctl start NetworkManager
+```
+
+仅重启 NetworkManager 无法恢复，必须让驱动重新 probe（unbind/bind 或重载模块）。
 
 ### 已实现与计划中的功能
 
