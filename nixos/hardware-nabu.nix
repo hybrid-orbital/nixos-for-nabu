@@ -4,7 +4,7 @@
 #
 # Boot chain on the device: UEFI (Project Aloha / DBKP) -> systemd-boot in ESP.
 # systemd-boot loads the EFI-stub kernel + initrd + DTB straight from the ESP
-# (no UKI); rootfs is identified by PARTLABEL=linux (ext4), ESP by
+# (no UKI); Linux storage is identified by PARTLABEL=linux, ESP by
 # PARTLABEL=esp.
 {
   config,
@@ -20,11 +20,8 @@
 
   # == Kernel =================================================================
   boot.kernelPackages = pkgs.linuxKernel.packagesFor pkgs.kernel-sm8150;
-  # root=PARTLABEL=linux is technically redundant under the systemd initrd
-  # (which boots with root=fstab from fileSystems."/"), but it boots fine on
-  # real hardware and documents the root device, so it is kept here.
+  # Root mounts are generated from the selected storage profile.
   boot.kernelParams = [
-    "root=PARTLABEL=linux"
     "rw"
     "systemd.gpt_auto=no"
     "cryptomgr.notests"
@@ -83,19 +80,6 @@
   ];
 
   # == Filesystems ============================================================
-  fileSystems."/" = {
-    device = "/dev/disk/by-partlabel/linux";
-    fsType = "ext4";
-    options = [
-      "rw"
-      "errors=remount-ro"
-      # The raw ext4 image is flashed into an already-sized GPT partition.
-      # Grow only the filesystem to that partition, exactly like Fedora's
-      # fstab; boot.growPartition would instead try to alter the device GPT.
-      "x-systemd.growfs"
-    ];
-  };
-
   fileSystems."/boot/efi" = {
     device = "/dev/disk/by-partlabel/esp";
     fsType = "vfat";

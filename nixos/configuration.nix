@@ -23,12 +23,14 @@ let
     postFixup = ''
       mv $out/bin/alsa-info.sh $out/bin/alsa-info
       wrapProgram $out/bin/alsa-info \
-        --prefix PATH : "${lib.makeBinPath [
-          pkgs.which
-          pkgs.pciutils
-          pkgs.procps
-          pkgs.tree
-        ]}" \
+        --prefix PATH : "${
+          lib.makeBinPath [
+            pkgs.which
+            pkgs.pciutils
+            pkgs.procps
+            pkgs.tree
+          ]
+        }" \
         --prefix PATH : $out/bin
     '';
   });
@@ -66,7 +68,8 @@ in
     ./hardware-nabu.nix
     ./boot.nix
     ./niri.nix
-    ./rootfs-image.nix
+    ./storage
+    ./images
   ];
 
   # == Identity ===============================================================
@@ -82,7 +85,7 @@ in
       "video"
       "audio"
     ];
-    initialPassword = "nabu";
+    initialPassword = lib.mkDefault "nabu";
   };
 
   # Noctalia greeter handles graphical login; TTY autologin remains enabled.
@@ -142,8 +145,7 @@ in
   networking.networkmanager.package = networkManagerNabu;
   networking.modemmanager.enable = false;
 
-  # Produce an uncompressed raw ext4 .img — directly flashable via
-  # `fastboot flash linux nabu-rootfs.ext4.img`
+  # Produce an uncompressed filesystem image for `fastboot flash linux`.
   nabu.image.compress = false;
 
   # Tablet power key: neither suspend nor power off. Screen on/off is left to
