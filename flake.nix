@@ -32,6 +32,17 @@
         };
     in
     {
+      checks = lib.genAttrs [ "x86_64-linux" "aarch64-linux" ] (system: {
+        filesystem-images = import ./tests/filesystem-images.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+          inherit lib;
+        };
+        storage-boot = import ./tests/storage-boot.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+          inherit lib impermanence;
+        };
+      });
+
       nixosConfigurations =
         lib.mapAttrs' (variant: _: {
           name = "${variant}-nabu";
