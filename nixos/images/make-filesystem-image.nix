@@ -61,8 +61,12 @@ let
         ''
           # Use portable 4 KiB sectors regardless of the builder's page size.
           # mkfs creates real subvolumes directly from the staged directories.
-          mkfs.btrfs -f -L nixos -s 4096 --rootdir "$root" \
+          # Compress the preinstalled closure, then discard unused image space.
+          mkfs.btrfs -f -L nixos -s 4096 --rootdir "$root" --compress zstd:15 --shrink \
             ${lib.concatMapStringsSep " " (s: "--subvol " + lib.escapeShellArg s) subvolumes} "$IMG"
+          # Leave deployment slack after the filesystem; initrd growfs claims it
+          # together with the remaining capacity of the destination partition.
+          truncate -s +${toString extraSizeMiB}M "$IMG"
           btrfs check --readonly "$IMG"
         ''
     }

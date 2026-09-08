@@ -1,7 +1,10 @@
 # Exercise the real image builder with a small closure, without tablet hardware.
 { pkgs, lib }:
 let
-  dependency = pkgs.writeText "nabu-image-test-dependency" "closure contents\n";
+  dependency = pkgs.runCommand "nabu-image-test-dependency" { } ''
+    # Large enough to distinguish compressed image sizing from input sizing.
+    head -c 268435456 /dev/zero | tr '\0' x > "$out"
+  '';
   toplevel = pkgs.runCommand "nabu-image-test-system" { } ''
     mkdir -p "$out"
     ln -s ${dependency} "$out/dependency"
@@ -61,6 +64,8 @@ pkgs.runCommand "nabu-filesystem-image-check"
       mkdir -p restored
       btrfs restore -S "$image" restored
       btrfs inspect-internal dump-tree "$image" > metadata
+      grep -m1 'compression 3 (zstd)' metadata
+      test "$(stat -c %s "$image")" -lt $(( $(stat -c %s ${dependency}) + 128 * 1024 * 1024 ))
       grep 'mode 40700 .* uid 0 gid 0' metadata
       if grep ' uid ' metadata | grep -v ' uid 0 gid 0 '; then
         echo "The image contains files owned by the builder" >&2

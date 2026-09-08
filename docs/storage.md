@@ -146,6 +146,11 @@ nix-store --query --requisites /run/current-system
 属主为 root，因此构建环境需要允许非特权用户命名空间。它使用 4 KiB 文件系统扇区，
 当前 mkfs 默认启用的特性适用于仓库的 Linux 6.17 内核。
 
+Btrfs 镜像制作时使用 `--compress zstd:15` 压缩预装闭包，再用 `--shrink` 缩去未使用的
+镜像空间，最后附加 `nabu.image.rootFsExtraSize` 指定的部署余量。首次启动的 growfs
+将这部分余量和目标分区的剩余容量纳入文件系统。运行时继续使用 `compress=zstd`。
+`nabu.image.compress` 单独控制镜像外层的 `.zst` 打包，不影响这些文件系统内部压缩。
+
 ```sh
 nix flake check --no-build --all-systems
 nix build .#checks.x86_64-linux.filesystem-images
