@@ -65,7 +65,7 @@ stdenv.mkDerivation {
       "$out/share/applications/TouchpadEmulator.desktop"
     substituteInPlace "$out/share/applications/TouchpadEmulator.desktop" \
       --replace-fail 'Exec=LaunchTouchpadEmulator.sh' \
-        'Exec=TouchpadEmulator --rotation-override 270'
+        'Exec=TouchpadEmulator --rotation-override 90'
     runHook postInstall
   '';
 
