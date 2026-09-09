@@ -1,0 +1,114 @@
+From: NixOS for nabu
+Subject: [PATCH] wifi: ath10k: stable MAC address support for nabu
+
+The generic board-2.bin carries no MAC address, so the WLAN interface
+receives a fresh random address on every boot. Add an
+ath10k_core.macaddr= module parameter to override the address from
+userspace/modprobe, plus a SHA-256 based fallback that derives a stable
+locally administered address from the SMBIOS board serial.
+
+The sm8150-mainline tree already relies on SMBIOS (dmi_walk) inside
+ath10k for the BDF variant lookup, so the serial is available on nabu's
+UEFI boot path.
+
+Adapted from TwinbornPlate75/linux-nabu commits:
+  a9d12de wifi: ath10k: add macaddr cmdline override
+  8f3c329 wifi: ath10k: generate stable MAC from board serial as fallback
+
+diff --git a/drivers/net/wireless/ath/ath10k/Kconfig b/drivers/net/wireless/ath/ath10k/Kconfig
+--- a/drivers/net/wireless/ath/ath10k/Kconfig
++++ b/drivers/net/wireless/ath/ath10k/Kconfig
+@@ -6,6 +6,7 @@
+ 	select CRC32
+ 	select WANT_DEV_COREDUMP
+ 	select ATH10K_CE
++	select CRYPTO_SHA256
+ 	help
+ 	  This module adds support for wireless adapters based on
+ 	  Atheros IEEE 802.11ac family of chipsets.
+diff --git a/drivers/net/wireless/ath/ath10k/core.c b/drivers/net/wireless/ath/ath10k/core.c
+--- a/drivers/net/wireless/ath/ath10k/core.c
++++ b/drivers/net/wireless/ath/ath10k/core.c
+@@ -16,6 +16,9 @@
+ #include <linux/ctype.h>
+ #include <linux/pm_qos.h>
+ #include <linux/nvmem-consumer.h>
++#include <linux/etherdevice.h>
++#include <crypto/hash.h>
++#include <crypto/sha2.h>
+ #include <asm/byteorder.h>
+ 
+ #include "core.h"
+@@ -54,6 +57,10 @@
+ module_param_named(frame_mode, ath10k_frame_mode, uint, 0644);
+ module_param_named(coredump_mask, ath10k_coredump_mask, ulong, 0444);
+ 
++char *ath10k_macaddr_param;
++module_param_named(macaddr, ath10k_macaddr_param, charp, 0444);
++MODULE_PARM_DESC(macaddr, "MAC address override, xx:xx:xx:xx:xx:xx");
++
+ MODULE_PARM_DESC(debug_mask, "Debugging mask");
+ MODULE_PARM_DESC(uart_print, "Uart target debugging");
+ MODULE_PARM_DESC(skip_otp, "Skip otp failure for calibration in testmode");
+@@ -62,7 +69,39 @@
+ 		 "Datapath frame mode (0: raw, 1: native wifi (default), 2: ethernet)");
+ MODULE_PARM_DESC(coredump_mask, "Bitfield of what to include in firmware crash file");
+ MODULE_PARM_DESC(fw_diag_log, "Diag based fw log debugging");
+ 
++/* Generate a stable MAC from the board serial (SHA-256 based) */
++static int ath10k_get_mac_from_serial(u8 *mac)
++{
++	struct crypto_shash *tfm;
++	const char *serial;
++	u8 hash[SHA256_DIGEST_SIZE];
++	int ret;
++
++	serial = dmi_get_system_info(DMI_BOARD_SERIAL);
++	if (!serial || !serial[0])
++		return -ENOENT;
++
++	tfm = crypto_alloc_shash("sha256", 0, 0);
++	if (IS_ERR(tfm))
++		return PTR_ERR(tfm);
++
++	ret = crypto_shash_tfm_digest(tfm, serial, strlen(serial), hash);
++	crypto_free_shash(tfm);
++	if (ret)
++		return ret;
++
++	/* Use first 6 bytes of hash; mark as locally administered unicast */
++	mac[0] = (hash[0] & 0xFC) | 0x02;
++	mac[1] = hash[1];
++	mac[2] = hash[2];
++	mac[3] = hash[3];
++	mac[4] = hash[4];
++	mac[5] = hash[5];
++
++	return 0;
++}
++
+ static const struct ath10k_hw_params ath10k_hw_params_list[] = {
+ 	{
+ 		.id = QCA988X_HW_2_0_VERSION,
+@@ -3456,7 +3495,20 @@
+ 		ath10k_debug_print_board_info(ar);
+ 	}
+ 
+-	device_get_mac_address(ar->dev, ar->mac_addr);
++	if (ath10k_macaddr_param &&
++	    mac_pton(ath10k_macaddr_param, ar->mac_addr) &&
++	    is_valid_ether_addr(ar->mac_addr)) {
++		ath10k_dbg(ar, ATH10K_DBG_BOOT, "using cmdline mac addr %pM\n",
++			   ar->mac_addr);
++	} else {
++		device_get_mac_address(ar->dev, ar->mac_addr);
++	}
++
++	if (!is_valid_ether_addr(ar->mac_addr) &&
++	    !ath10k_get_mac_from_serial(ar->mac_addr)) {
++		ath10k_dbg(ar, ATH10K_DBG_BOOT,
++			   "using serial-derived mac addr %pM\n", ar->mac_addr);
++	}
+ 
+ 	ret = ath10k_core_init_firmware_features(ar);
+ 	if (ret) {
