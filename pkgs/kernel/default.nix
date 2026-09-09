@@ -131,6 +131,13 @@ let
         patch = ./patches/0001-nabu-match-fedora-runtime-fixes.patch;
       }
       {
+        # The generic board-2.bin carries no MAC: derive a stable address from
+        # the SMBIOS board serial, with an ath10k_core.macaddr= override for
+        # cases where the boot firmware exposes no usable serial.
+        name = "nabu-ath10k-mac-address";
+        patch = ./patches/0002-nabu-ath10k-mac-address.patch;
+      }
+      {
         name = "nabu-defconfig";
         patch = defconfigPatch;
       }

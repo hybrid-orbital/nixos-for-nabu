@@ -28,6 +28,10 @@
     "rw"
     "systemd.gpt_auto=no"
     "cryptomgr.notests"
+    # The Adreno 640 (MSM DRM) suspend path is incomplete on sm8150-mainline,
+    # so deep suspend aborts. Force suspend-to-idle, which freezes userspace
+    # and idles the CPUs without triggering the broken GPU power collapse.
+    "mem_sleep_default=s2idle"
     # Explicit text console: the nabu DTB has no simple-framebuffer node, so
     # the kernel must attach fbcon to tty0 to render early boot logs on the
     # panel (otherwise fbcon may not bind and the screen stays black).
@@ -225,6 +229,16 @@
     wifi.backend = "iwd";
   };
   networking.wireless.enable = false; # avoid wpa_supplicant conflict
+
+  # The generic board-2.bin carries no MAC, so the kernel patch
+  # (pkgs/kernel/patches/0002-nabu-ath10k-mac-address.patch) derives a stable
+  # locally-administered address from the SMBIOS board serial. If the boot
+  # firmware exposes no usable serial (or a fixed MAC is required, e.g. for a
+  # DHCP reservation), override it here with the per-device address:
+  #
+  #   boot.extraModprobeConfig = ''
+  #     options ath10k_core macaddr=00:11:22:33:44:55
+  #   '';
 
   # == Zram (matches reference: full-RAM size, zstd) ==========================
   zramSwap = {
