@@ -4,7 +4,7 @@
 
 当前发布为 [v0.1.0-alpha](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v0.1.0-alpha)，
 维护者已验证 niri + Noctalia 和 systemd-boot generation 菜单可用。
-仍有相机不可用、低功耗休眠未解决、偶发启动失败，以及每次重启 Wi-Fi MAC 地址变化，
+仍有相机不可用、低功耗休眠未解决和偶发启动失败（重启后随机 Wi-Fi MAC 地址问题已解决），
 见[设备状态](device-status.md)。
 
 ## 适用设备与已有环境

@@ -30,13 +30,17 @@ that every hardware feature is supported.
 | Low-power suspend | Not working; locking or blanking the display does not establish low-power operation |
 | Power key | Deliberately ignored pending usable screen-off and suspend/resume support |
 | Boot reliability | Boot sometimes fails; the cause is still under investigation |
-| Wi-Fi MAC address | A new random address is selected on every reboot; it does not remain stable across boots |
 | Wi-Fi hangs after idle | After long idle, ath10k_snoc detects an unresponsive firmware/WMI, recovery fails repeatedly, and Wi-Fi stops working until the driver is reloaded |
 | Image size | The rootfs is large; reducing the closure and splitting configurations are priorities |
 
-The changing Wi-Fi MAC address may affect MAC-based DHCP reservations and network
-access rules. The behavior is confirmed, but its cause and a fix have not been
-verified. Other hardware needs fuller test records; enabling a driver in the
+The random Wi-Fi MAC address across reboots is now resolved: the generic
+board-2.bin carries no MAC, so a kernel patch
+(`pkgs/kernel/patches/0002-nabu-ath10k-mac-address.patch`) derives a stable
+locally-administered address from the SMBIOS board serial, overridable with the
+`ath10k_core.macaddr=` module parameter. The approach comes from
+[TwinbornPlate75/linux-nabu](https://github.com/TwinbornPlate75/linux-nabu).
+
+Other hardware needs fuller test records; enabling a driver in the
 configuration is not evidence of hardware validation. When reporting a problem,
 include the image version, firmware version, reproduction steps and logs;
 distinguish cold boots from warm reboots.
