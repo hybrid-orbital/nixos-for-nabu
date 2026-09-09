@@ -54,11 +54,18 @@ stdenv.mkDerivation {
     install -Dm644 TouchpadEmulator.svg \
       "$out/share/icons/hicolor/scalable/apps/TouchpadEmulator.svg"
     # Upstream's Exec points at LaunchTouchpadEmulator.sh (pkexec chmod hack);
-    # with proper udev permissions the plain binary is enough.
+    # with proper udev permissions the plain binary is enough.  The fixed
+    # rotation matches the desktop: niri rotates DSI-1 with transform "270"
+    # (= 90° clockwise; fbcon=rotate:1 agrees) and niri 26.04 applies output
+    # transforms to absolute but not relative pointer motion, so the emulated
+    # mouse deltas must be pre-rotated by 90° clockwise.  nabu's panel has no
+    # accelerometer driver, which also rules out the program's autorotation;
+    # --rotation-override skips that query entirely.
     install -Dm644 TouchpadEmulator.desktop \
       "$out/share/applications/TouchpadEmulator.desktop"
     substituteInPlace "$out/share/applications/TouchpadEmulator.desktop" \
-      --replace-fail 'Exec=LaunchTouchpadEmulator.sh' 'Exec=TouchpadEmulator'
+      --replace-fail 'Exec=LaunchTouchpadEmulator.sh' \
+        'Exec=TouchpadEmulator --rotation-override 270'
     runHook postInstall
   '';
 
