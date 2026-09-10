@@ -1,0 +1,53 @@
+From: NixOS for nabu
+Subject: [PATCH] drm/msm/adreno: do not abort system suspend on GPU quiesce
+ timeout
+
+The msm GPU driver registers adreno_system_suspend() for every system
+sleep transition (SYSTEM_SLEEP_PM_OPS maps .suspend, .freeze and
+.poweroff to it), and the PM core runs dpm_suspend_start(PMSG_SUSPEND)
+for both suspend-to-idle and suspend-to-RAM. When the GPU does not
+quiesce within the one-second wait, the callback returns -EBUSY and the
+PM core aborts the entire system suspend ("Some devices failed to
+suspend"). On sm8150/nabu, where the a6xx GMU suspend sequence is not
+fully reliable, this turns every suspend attempt into a failure,
+regardless of the mem_sleep mode selected on the command line.
+
+A single wedged device must not veto system sleep. On the timeout path,
+fall through to pm_runtime_force_suspend() instead: the a6xx GMU stop
+sequence already degrades gracefully (a6xx_gmu_shutdown() self-falls
+back to a6xx_gmu_force_off() with bounded waits whenever the GMU is not
+responsive), and resume cold-boots the GPU back up from a clean power
+state, which is the same recovery the hang path uses.
+
+Approach adapted from the iris VPU5 suspend fix (CFM880/nabu-iris
+42085a8, "media: iris: stop aborting suspend on legacy VPU5"): a device
+whose power-collapse is incomplete keeps system suspend alive instead
+of failing it.
+
+diff --git a/drivers/gpu/drm/msm/adreno/adreno_device.c b/drivers/gpu/drm/msm/adreno/adreno_device.c
+--- a/drivers/gpu/drm/msm/adreno/adreno_device.c
++++ b/drivers/gpu/drm/msm/adreno/adreno_device.c
+@@ -362,13 +362,20 @@
+ 				       gpu->active_submits == 0,
+ 				       msecs_to_jiffies(1000));
+ 	if (remaining == 0) {
++		/*
++		 * A GPU that failed to quiesce in time must not
++		 * veto system sleep: the s2idle and suspend-to-RAM
++		 * paths both run this callback, so returning an
++		 * error here aborts every suspend attempt. Fall
++		 * through to the shutdown instead: the GMU stop
++		 * sequence degrades to a forced power-off when the
++		 * GMU is not responsive, and resume cold-boots the
++		 * GPU back up.
++		 */
+ 		dev_err(dev, "Timeout waiting for GPU to suspend\n");
+-		ret = -EBUSY;
+-		goto out;
+ 	}
+ 
+ 	ret = pm_runtime_force_suspend(dev);
+-out:
+ 	if (ret)
+ 		resume_scheduler(gpu);
+ 

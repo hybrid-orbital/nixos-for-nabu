@@ -138,6 +138,15 @@ let
         patch = ./patches/0002-nabu-ath10k-mac-address.patch;
       }
       {
+        # adreno_system_suspend() returns -EBUSY when the GPU does not
+        # quiesce within 1s, and the PM core treats that as fatal for the
+        # whole system suspend -- in both s2idle and deep mode. On sm8150
+        # the GMU suspend sequence is not reliable, so every suspend aborts.
+        # Let the (already self-degrading) GMU shutdown run instead.
+        name = "nabu-adreno-do-not-abort-system-suspend";
+        patch = ./patches/0003-nabu-adreno-do-not-abort-system-suspend.patch;
+      }
+      {
         name = "nabu-defconfig";
         patch = defconfigPatch;
       }

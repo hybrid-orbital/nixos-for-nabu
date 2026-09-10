@@ -25,9 +25,11 @@
     "rw"
     "systemd.gpt_auto=no"
     "cryptomgr.notests"
-    # The Adreno 640 (MSM DRM) suspend path is incomplete on sm8150-mainline,
-    # so deep suspend aborts. Force suspend-to-idle, which freezes userspace
-    # and idles the CPUs without triggering the broken GPU power collapse.
+    # Default to suspend-to-idle. Device suspend callbacks run identically in
+    # s2idle and deep mode, so the GPU quiesce abort is fixed by the adreno
+    # kernel patch (0003), not by this parameter; this only selects the
+    # lighter, firmware-independent sleep mode. Deep suspend via PSCI stays
+    # available for per-device testing through /sys/power/mem_sleep.
     "mem_sleep_default=s2idle"
     # Explicit text console: the nabu DTB has no simple-framebuffer node, so
     # the kernel must attach fbcon to tty0 to render early boot logs on the
