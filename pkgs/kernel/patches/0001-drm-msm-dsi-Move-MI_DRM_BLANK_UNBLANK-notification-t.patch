@@ -1,0 +1,66 @@
+From bc048e0622820dea80fcd756ced908547c1ca493 Mon Sep 17 00:00:00 2001
+From: TwinbornPlate75 <3342733415@qq.com>
+Date: Sat, 30 May 2026 23:21:23 +0800
+Subject: [PATCH] drm/msm: dsi: Move MI_DRM_BLANK_UNBLANK notification to
+ enable callback
+
+The MI_DRM_BLANK_UNBLANK notifier was sent in pre_enable(), before the
+DSI host was enabled and before the panel had a chance to prepare/enable.
+This caused the touchscreen driver to resume before the display was
+ready, leading to intermittent screen failures on wake.
+
+Move the notification to the enable() callback which runs after
+panel_bridge_atomic_enable() calls drm_panel_enable(), ensuring the
+display pipeline is fully up before notifying dependent drivers.
+---
+ drivers/gpu/drm/msm/dsi/dsi_manager.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/msm/dsi/dsi_manager.c b/drivers/gpu/drm/msm/dsi/dsi_manager.c
+index 5373630543d8..0019b5daaebf 100644
+--- a/drivers/gpu/drm/msm/dsi/dsi_manager.c
++++ b/drivers/gpu/drm/msm/dsi/dsi_manager.c
+@@ -276,6 +276,14 @@ static void dsi_mgr_bridge_power_off(struct drm_bridge *bridge)
+ 	dsi_mgr_phy_disable(id);
+ }
+ 
++static void dsi_mgr_bridge_enable(struct drm_bridge *bridge)
++{
++	enum drm_notifier_data notifier_data;
++
++	notifier_data = MI_DRM_BLANK_UNBLANK;
++	mi_drm_notifier_call_chain(MI_DRM_EVENT_BLANK, &notifier_data);
++}
++
+ static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge)
+ {
+ 	int id = dsi_mgr_bridge_get_id(bridge);
+@@ -284,7 +292,6 @@ static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge)
+ 	struct mipi_dsi_host *host = msm_dsi->host;
+ 	bool is_bonded_dsi = IS_BONDED_DSI();
+ 	int ret;
+-	enum drm_notifier_data notifier_data;
+ 
+ 	DBG("id=%d", id);
+ 
+@@ -298,9 +305,6 @@ static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge)
+ 		return;
+ 	}
+ 
+-	notifier_data = MI_DRM_BLANK_UNBLANK;
+-	mi_drm_notifier_call_chain(MI_DRM_EVENT_BLANK, &notifier_data);
+-
+ 	ret = msm_dsi_host_enable(host);
+ 	if (ret) {
+ 		pr_err("%s: enable host %d failed, %d\n", __func__, id, ret);
+@@ -456,6 +460,7 @@ static int dsi_mgr_bridge_attach(struct drm_bridge *bridge,
+ static const struct drm_bridge_funcs dsi_mgr_bridge_funcs = {
+ 	.attach = dsi_mgr_bridge_attach,
+ 	.pre_enable = dsi_mgr_bridge_pre_enable,
++	.enable = dsi_mgr_bridge_enable,
+ 	.post_disable = dsi_mgr_bridge_post_disable,
+ 	.mode_set = dsi_mgr_bridge_mode_set,
+ 	.mode_valid = dsi_mgr_bridge_mode_valid,
+-- 
+2.55.0
+

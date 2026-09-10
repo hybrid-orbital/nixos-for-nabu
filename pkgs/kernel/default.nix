@@ -147,6 +147,18 @@ let
         patch = ./patches/0003-nabu-adreno-do-not-abort-system-suspend.patch;
       }
       {
+        # The MI_DRM_BLANK_UNBLANK notifier was sent in pre_enable(), before the
+        # DSI host was enabled and before the panel had a chance to prepare/enable.
+        # This caused the touchscreen driver to resume before the display was
+        # ready, leading to intermittent screen failures on wake.
+        # 
+        # Move the notification to the enable() callback which runs after
+        # panel_bridge_atomic_enable() calls drm_panel_enable(), ensuring the
+        # display pipeline is fully up before notifying dependent drivers.
+        name = "drm-msm-dsi-Move-MI_DRM_BLANK_UNBLANK-notification";
+        patch = ./patches/0001-drm-msm-dsi-Move-MI_DRM_BLANK_UNBLANK-notification-t.patch;
+      }
+      {
         name = "nabu-defconfig";
         patch = defconfigPatch;
       }
