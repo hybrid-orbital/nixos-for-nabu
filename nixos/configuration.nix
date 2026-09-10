@@ -153,6 +153,27 @@ in
   # brief "lights on then off" glitch.
   services.logind.settings.Login.HandlePowerKey = "ignore";
 
+  # == Suspend debugging ======================================================
+  # nabu wakes from s2idle within ~1s and the wake source is not visible with
+  # the default configuration. The kernel-side debug facilities (PM_DEBUG
+  # sysfs attributes, suspend/wakeup/irq tracepoints) are compiled into every
+  # kernel — see pkgs/kernel/default.nix — while this specialisation adds a
+  # separate boot entry (systemd-boot menu, title suffixed "suspend-debug")
+  # carrying the extra kernel command line needed to catch the wake IRQ:
+  #   pm_debug_messages  - verbose PM core messages during suspend/resume
+  #   no_console_suspend - keep the console alive through late/noirq phases
+  #   initcall_debug     - log initcall/device PM callback timing
+  # Boot the "suspend-debug" entry from the systemd-boot menu to debug; the
+  # default entry stays untouched. Remove this block once the wake source is
+  # identified and fixed.
+  specialisation."suspend-debug".configuration = {
+    boot.kernelParams = [
+      "pm_debug_messages"
+      "no_console_suspend"
+      "initcall_debug"
+    ];
+  };
+
   # The system is stateless enough for this; speeds up shutdown
   systemd.settings.Manager.DefaultTimeoutStopSec = "10s";
 }

@@ -174,6 +174,29 @@ let
       NETFILTER_XT_MATCH_PKTTYPE m
       IP_NF_MATCH_RPFILTER m
       IP6_NF_MATCH_RPFILTER m
+      # Suspend/resume debugging (s2idle immediate-wake investigation).
+      # PM_DEBUG enables the PM debug framework; PM_SLEEP_DEBUG follows
+      # automatically (def_bool y once PM_DEBUG is on) and provides
+      # /sys/power/{pm_test,pm_print_times,pm_wakeup_irq,pm_debug_messages}
+      # plus the pm_debug_messages= cmdline parameter. PM_ADVANCED_DEBUG adds
+      # the low-level per-device PM attributes in sysfs. PM_TRACE is x86-only
+      # (PM_TRACE_RTC depends on X86) and is unavailable on arm64.
+      PM_DEBUG y
+      PM_ADVANCED_DEBUG y
+      # Tracepoints for suspend/wakeup/irq events (power:suspend_resume,
+      # power:wakeup_source_{activate,deactivate}, irq:irq_handler_{entry,exit}).
+      # The arm64 defconfig disables FTRACE entirely; ENABLE_DEFAULT_TRACERS is
+      # the lightweight events-only selector: it selects TRACING, which selects
+      # TRACEPOINTS and EVENT_TRACING, while keeping the heavyweight function
+      # tracers (FUNCTION_TRACER etc.) off. PM_SLEEP_DEBUG, TRACEPOINTS and
+      # EVENT_TRACING are hidden symbols — their answers are not prompted but
+      # double as build-time assertions: the strict unused-option check fails
+      # the build if any link in the chain resolves to something other than y.
+      FTRACE y
+      ENABLE_DEFAULT_TRACERS y
+      PM_SLEEP_DEBUG y
+      TRACEPOINTS y
+      EVENT_TRACING y
     '';
 
     # With nixpkgs' common config disabled, every remaining override is ours
