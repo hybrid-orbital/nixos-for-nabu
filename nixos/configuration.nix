@@ -94,10 +94,18 @@ in
   services.getty.autologinUser = "nabu";
 
   # == Nix ====================================================================
-  nix.settings.experimental-features = [
-    "nix-command"
-    "flakes"
-  ];
+  nix.settings = {
+    experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
+    # Prebuilt nabu kernel and images.  The extra-* options add this cache on
+    # top of the nixpkgs defaults instead of replacing cache.nixos.org.
+    extra-substituters = [ "https://nix-nabu.cachix.org" ];
+    extra-trusted-public-keys = [
+      "nix-nabu.cachix.org-1:6oBp/ANDnp5za8MMMfz6EpkJbN1jaRlRpPIoKL4tCGM="
+    ];
+  };
   nixpkgs.config.allowUnfree = true;
 
   # This is a bring-up image, and cross-building the NixOS manuals pulls in a
