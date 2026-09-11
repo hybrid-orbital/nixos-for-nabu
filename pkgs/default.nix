@@ -11,6 +11,10 @@ final: prev: {
   # Device firmware from the postmarketOS firmware repo
   xiaomi-nabu-firmware = final.callPackage ./nabu-firmware.nix { };
 
+  # linux-firmware whitelisted down to what nabu + common USB devices use
+  # (88 MiB compressed instead of 791 MiB) — see the file header for the list
+  linux-firmware-nabu = final.callPackage ./linux-firmware-nabu.nix { };
+
   # Touchscreen-as-touchpad emulator for tablet use
   touchpad-emulator = final.callPackage ./touchpad-emulator.nix { };
 

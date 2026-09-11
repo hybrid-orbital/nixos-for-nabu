@@ -96,8 +96,23 @@
   };
 
   # == Firmware ===============================================================
-  hardware.enableRedistributableFirmware = true;
-  hardware.firmware = [ pkgs.xiaomi-nabu-firmware ];
+  # The stock linux-firmware package is 791 MiB compressed (1.8 GiB raw) and
+  # brings the whole firmware environment to ~827 MiB of the system closure,
+  # almost all of which is unusable here (x86 GPU/CPU-microcode/audio firmware,
+  # Intel and Atheros PCIe WiFi, datacenter NICs, other Qualcomm SoCs).
+  # linux-firmware-nabu keeps the onboard + common USB-device parts (88 MiB
+  # compressed; the firmware environment becomes 100 MiB); see
+  # pkgs/linux-firmware-nabu.nix for the keep list and the reasoning.
+  #
+  # Turning enableRedistributableFirmware off also disables
+  # wirelessRegulatoryDatabase by default, so it has to be enabled explicitly —
+  # otherwise WiFi loses regulatory.db.
+  hardware.enableRedistributableFirmware = false;
+  hardware.wirelessRegulatoryDatabase = true;
+  hardware.firmware = [
+    pkgs.linux-firmware-nabu
+    pkgs.xiaomi-nabu-firmware
+  ];
 
   # == Qualcomm remoteproc services ==========================================
   # Match Fedora's nabu preset: Linux 6.17 provides the QRTR name service and
