@@ -23,12 +23,14 @@ let
     postFixup = ''
       mv $out/bin/alsa-info.sh $out/bin/alsa-info
       wrapProgram $out/bin/alsa-info \
-        --prefix PATH : "${lib.makeBinPath [
-          pkgs.which
-          pkgs.pciutils
-          pkgs.procps
-          pkgs.tree
-        ]}" \
+        --prefix PATH : "${
+          lib.makeBinPath [
+            pkgs.which
+            pkgs.pciutils
+            pkgs.procps
+            pkgs.tree
+          ]
+        }" \
         --prefix PATH : $out/bin
     '';
   });
@@ -66,7 +68,8 @@ in
     ./hardware-nabu.nix
     ./boot.nix
     ./niri.nix
-    ./rootfs-image.nix
+    ./storage
+    ./images
   ];
 
   # == Identity ===============================================================
@@ -82,7 +85,7 @@ in
       "video"
       "audio"
     ];
-    initialPassword = "nabu";
+    initialPassword = lib.mkDefault "nabu";
   };
 
   # Noctalia greeter handles graphical login; TTY autologin remains enabled.
@@ -142,14 +145,34 @@ in
   networking.networkmanager.package = networkManagerNabu;
   networking.modemmanager.enable = false;
 
-  # Produce an uncompressed raw ext4 .img — directly flashable via
-  # `fastboot flash linux nabu-rootfs.ext4.img`
+  # Produce an uncompressed filesystem image for `fastboot flash linux`.
   nabu.image.compress = false;
 
   # Tablet power key: neither suspend nor power off. Screen on/off is left to
   # the compositor (niri) and the kernel, avoiding suspend on nabu causing a
   # brief "lights on then off" glitch.
   services.logind.settings.Login.HandlePowerKey = "ignore";
+
+  # == Suspend debugging ======================================================
+  # nabu wakes from s2idle within ~1s and the wake source is not visible with
+  # the default configuration. The kernel-side debug facilities (PM_DEBUG
+  # sysfs attributes, suspend/wakeup/irq tracepoints) are compiled into every
+  # kernel — see pkgs/kernel/default.nix — while this specialisation adds a
+  # separate boot entry (systemd-boot menu, title suffixed "suspend-debug")
+  # carrying the extra kernel command line needed to catch the wake IRQ:
+  #   pm_debug_messages  - verbose PM core messages during suspend/resume
+  #   no_console_suspend - keep the console alive through late/noirq phases
+  #   initcall_debug     - log initcall/device PM callback timing
+  # Boot the "suspend-debug" entry from the systemd-boot menu to debug; the
+  # default entry stays untouched. Remove this block once the wake source is
+  # identified and fixed.
+  specialisation."suspend-debug".configuration = {
+    boot.kernelParams = [
+      "pm_debug_messages"
+      "no_console_suspend"
+      "initcall_debug"
+    ];
+  };
 
   # The system is stateless enough for this; speeds up shutdown
   systemd.settings.Manager.DefaultTimeoutStopSec = "10s";

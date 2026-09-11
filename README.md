@@ -14,6 +14,8 @@ This fork builds on that foundation through validation, native Nixpkgs boot
 management and everyday desktop use. This project depends on the work and
 contributions of many other projects, credited below.
 
+Storage variants and persistence settings: [storage guide](docs/storage.md) (Chinese).
+
 ## Current release
 
 [**v0.1.0-alpha**](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v0.1.0-alpha),
@@ -30,7 +32,7 @@ that every hardware feature is supported.
 | Low-power suspend | Not working; locking or blanking the display does not establish low-power operation |
 | Power key | Deliberately ignored pending usable screen-off and suspend/resume support |
 | Boot reliability | Boot sometimes fails; the cause is still under investigation |
-| Wi-Fi hangs after idle | After long idle, ath10k_snoc detects an unresponsive firmware/WMI, recovery fails repeatedly, and Wi-Fi stops working until the driver is reloaded |
+| Wi-Fi hangs after idle | After long idle, ath10k_snoc detects an unresponsive firmware/WMI, recovery fails repeatedly, and Wi-Fi stops working until the driver is reloaded (cause located, upstream fix backported, on-device validation pending) |
 | Image size | The rootfs is large; reducing the closure and splitting configurations are priorities |
 
 The random Wi-Fi MAC address across reboots is now resolved: the generic
@@ -48,10 +50,18 @@ distinguish cold boots from warm reboots.
 Wi-Fi may hang after a long idle period: `ath10k_snoc` (WCN3990) detects an
 unresponsive firmware/WMI, attempts automatic recovery, and after repeated
 failures gives up (wedged state), leaving Wi-Fi unusable. The `WARN_ON` in
-`mac.c` seen in dmesg is the result of the failed recovery, not the root cause.
-The root cause is still under investigation and is suspected to relate to SNOC
-power management / WMI timeouts, not the firmware version (firmware is loaded
-via TQFTP and is already HL 3.2.0). Reload the driver manually to recover:
+`mac.c` is the symptom, not the root cause: the recovery bookkeeping in
+`ath10k` could mark the device `WEDGED` because of recoveries that never ran
+(the check ran synchronously on the QMI indication path and queued its work on
+the ordered workqueue, where later triggers were coalesced, so every trigger
+merely consumed a consecutive-failure credit), and `ath10k_start()` then fails
+permanently even though the interface was down. Upstream commit `f35a07a4842a`
+("wifi: ath10k: move recovery check logic into a new work") runs the check on
+its own workqueue and cancels it in `ath10k_stop()`; it is backported here as
+`pkgs/kernel/patches/0004-nabu-ath10k-recovery-check-workqueue.patch`. The
+firmware version is unrelated (firmware is loaded via TQFTP and is already
+HL 3.2.0). Until the backport has been validated on hardware, reload the
+driver manually to recover:
 
 ```sh
 # Option 1 (recommended): rebind the platform device, no extra tools needed
@@ -77,13 +87,14 @@ Restarting NetworkManager alone does not recover; the driver must be re-probed
 | --- | --- |
 | Native systemd-boot generations and an Android entry | Smaller images and stronger release validation |
 | niri + Noctalia desktop and greeter | Separate TTY and KDE configurations |
-| Flashable ext4 rootfs and ESP images | Btrfs and Impermanence designs |
+| Flashable ext4 images and an experimental tmpfs root + Btrfs variant | Hardware validation of persistence and recovery |
 | Native ARM64 and x86_64 cross-build entry points | Cross-build compatibility and cache usability |
 | Landscape boot menu, greeter, desktop and pen mapping | Screen-off, suspend/resume and remaining hardware support |
 | Local image export script | GitHub Actions build and release infrastructure |
 
 Cross-build entry points do not guarantee every configuration will build.
-TTY, KDE and Btrfs variants are not available flake outputs yet. See
+TTY and KDE variants are not available flake outputs yet. The experimental Btrfs
+variant needs hardware validation. See
 [device status](docs/device-status.md) and the [roadmap](docs/roadmap.md) (Chinese).
 
 ## Install a release image
@@ -130,7 +141,8 @@ partition names. On first boot, ext4 grows to the existing `linux` partition siz
 the partition table is not changed.
 
 At the Noctalia greeter, both the default username and initial password are **`nabu`**.
-Run `passwd` after login. **TTY autologin and SSH password authentication are also
+For ext4, run `passwd` after login; the impermanent profile uses
+[declarative passwords](docs/storage.md#无状态版本的密码). **TTY autologin and SSH password authentication are also
 enabled**; adjust the configuration for ongoing personal use. Changing the password
 does not disable TTY autologin. Use `systemctl --failed` to inspect failed services,
 `findmnt /boot/efi` to check the ESP mount, and `bootctl list` to inspect boot entries.
@@ -159,7 +171,7 @@ specific Nix store system closure, and old entries retain their matching boot fi
 External DTB loading works with the tested firmware with Secure Boot disabled;
 a UKI is no longer necessary to deliver the device tree.
 
-The project's `mkEsp` code still assembles the initial ESP with one generation.
+The project's `system.build.esp-image` code still assembles the initial ESP with one generation.
 Subsequent rebuilds use the nixpkgs systemd-boot installer to deploy and manage
 generations. Initial image files and old UKI/rEFInd files may not be cleaned up
 automatically; check retained entries before deleting them. See
@@ -251,8 +263,8 @@ to the current non-UKI outputs and is not a test entry point for this release.
 - **Builds and caches:** improve cross-build commands and diagnostics, track compatibility,
   and explore native ARM64 builders and binary caches to reduce the first on-device rebuild cost.
 - **System and image size:** measure large dependencies, shrink the rootfs and separate common
-  device modules from TTY, niri and KDE configurations. Explore Btrfs subvolumes and Impermanence
-  persistence, including image generation and recovery procedures.
+  device modules from TTY, niri and KDE configurations. Validate the new Btrfs/Impermanence
+  variant on hardware and document recovery procedures.
 - **Device support:** investigate intermittent boot failures and Wi-Fi MAC changes across
   reboots, work on cameras and kernel options, and implement usable power-key behavior,
   screen-off and low-power suspend/resume with measured standby power consumption.
@@ -261,7 +273,7 @@ to the current non-UKI outputs and is not a test entry point for this release.
 - **Documentation and contributions:** keep both READMEs, installation steps and device status
   aligned; document reproducible usage and validation for new variants, and translate detailed guides.
 
-These are planned tasks. Separate TTY/KDE/Btrfs outputs and automated image CI are
+These are planned tasks. Separate TTY/KDE outputs and automated image CI are
 not available yet. Contributions with configuration details, logs and validation
 results are welcome. The [roadmap](docs/roadmap.md) and
 [contribution guide](CONTRIBUTING.md) (Chinese) provide more detail.

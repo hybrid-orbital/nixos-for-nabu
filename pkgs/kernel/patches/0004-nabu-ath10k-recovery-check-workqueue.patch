@@ -1,0 +1,126 @@
+From: NixOS for nabu
+Subject: [PATCH] wifi: ath10k: run the recovery check on its own workqueue
+
+ath10k_core_start_recovery() is invoked from the SNOC/QMI "firmware ready"
+indication (ath10k_snoc_fw_indication(), ATH10K_QMI_EVENT_FW_READY_IND) and
+from WMI command timeouts. It calls ath10k_core_needs_recovery() synchronously
+in that caller's context, which may block for up to ATH10K_RECOVERY_TIMEOUT_HZ
+(5s) in wait_for_completion_timeout(), and only then queues restart_work on
+the ordered, single-threaded ath10k_wq.
+
+Two problems follow from that:
+
+ * While a recovery is pending or executing, the ordered workqueue coalesces
+   the restart_work item, so later triggers neither restart anything nor
+   complete ar->driver_recovery. Each such trigger then merely consumes one
+   ATH10K_RECOVERY_MAX_FAIL_COUNT credit in ath10k_core_needs_recovery()
+   (the count is bumped purely because the wait timed out), driving the
+   driver to ATH10K_STATE_WEDGED on the basis of recoveries that never ran.
+
+ * The 5s blocking wait runs in the QMI indication path, delaying the
+   processing of the remaining firmware indications.
+
+Once ar->state is ATH10K_STATE_WEDGED, the next open of the interface from
+userspace (NetworkManager -> dev_open -> ieee80211_open -> drv_start) hits
+WARN_ON(1) in the switch in ath10k_start() (drivers/net/wireless/ath/ath10k/
+mac.c:5199 on this tree) and returns -EINVAL. The WARN path does not restore
+ar->state, so the interface stays unusable until the driver is re-probed
+(unbind/bind or module reload) -- the "Wi-Fi hangs after idle" symptom on
+nabu (sm8150 / WCN3990 SNOC), where the WLAN PD can send a fresh FW_READY
+indication on its own.
+
+Move the check logic into ath10k_core_recovery_check_work() and run it on the
+auxiliary workqueue, and cancel it in ath10k_stop() so that a queued check
+cannot fire after the interface has been torn down.
+
+Backport of upstream commit f35a07a4842a ("wifi: ath10k: move recovery check
+logic into a new work"), which fixes c256a94d1b1b ("wifi: ath10k: shutdown
+driver when hardware is unreliable"). Mainline has not shipped it in a
+6.17.y release, so carry it here.
+
+diff --git a/drivers/net/wireless/ath/ath10k/core.c b/drivers/net/wireless/ath/ath10k/core.c
+--- a/drivers/net/wireless/ath/ath10k/core.c
++++ b/drivers/net/wireless/ath/ath10k/core.c
+@@ -2493,8 +2493,9 @@ static int ath10k_init_hw_params(struct ath10k *ar)
+ 	return 0;
+ }
+ 
+-static bool ath10k_core_needs_recovery(struct ath10k *ar)
++static void ath10k_core_recovery_check_work(struct work_struct *work)
+ {
++	struct ath10k *ar = container_of(work, struct ath10k, recovery_check_work);
+ 	long time_left;
+ 
+ 	/* Sometimes the recovery will fail and then the next all recovery fail,
+@@ -2504,7 +2505,7 @@ static bool ath10k_core_needs_recovery(struct ath10k *ar)
+ 		ath10k_err(ar, "consecutive fail %d times, will shutdown driver!",
+ 			   atomic_read(&ar->fail_cont_count));
+ 		ar->state = ATH10K_STATE_WEDGED;
+-		return false;
++		return;
+ 	}
+ 
+ 	ath10k_dbg(ar, ATH10K_DBG_BOOT, "total recovery count: %d", ++ar->recovery_count);
+@@ -2518,27 +2519,24 @@ static bool ath10k_core_needs_recovery(struct ath10k *ar)
+ 							ATH10K_RECOVERY_TIMEOUT_HZ);
+ 		if (time_left) {
+ 			ath10k_warn(ar, "previous recovery succeeded, skip this!\n");
+-			return false;
++			return;
+ 		}
+ 
+ 		/* Record the continuous recovery fail count when recovery failed. */
+ 		atomic_inc(&ar->fail_cont_count);
+ 
+ 		/* Avoid having multiple recoveries at the same time. */
+-		return false;
++		return;
+ 	}
+ 
+ 	atomic_inc(&ar->pending_recovery);
+-
+-	return true;
++	queue_work(ar->workqueue, &ar->restart_work);
+ }
+ 
+ void ath10k_core_start_recovery(struct ath10k *ar)
+ {
+-	if (!ath10k_core_needs_recovery(ar))
+-		return;
+-
+-	queue_work(ar->workqueue, &ar->restart_work);
++	/* Use workqueue_aux to avoid blocking recovery tracking */
++	queue_work(ar->workqueue_aux, &ar->recovery_check_work);
+ }
+ EXPORT_SYMBOL(ath10k_core_start_recovery);
+ 
+@@ -3734,6 +3732,7 @@ struct ath10k *ath10k_core_create(size_t priv_size, struct device *dev,
+ 
+ 	INIT_WORK(&ar->register_work, ath10k_core_register_work);
+ 	INIT_WORK(&ar->restart_work, ath10k_core_restart);
++	INIT_WORK(&ar->recovery_check_work, ath10k_core_recovery_check_work);
+ 	INIT_WORK(&ar->set_coverage_class_work,
+ 		  ath10k_core_set_coverage_class_work);
+ 
+diff --git a/drivers/net/wireless/ath/ath10k/core.h b/drivers/net/wireless/ath/ath10k/core.h
+--- a/drivers/net/wireless/ath/ath10k/core.h
++++ b/drivers/net/wireless/ath/ath10k/core.h
+@@ -1208,6 +1208,7 @@ struct ath10k {
+ 
+ 	struct work_struct register_work;
+ 	struct work_struct restart_work;
++	struct work_struct recovery_check_work;
+ 	struct work_struct bundle_tx_work;
+ 	struct work_struct tx_complete_work;
+ 
+diff --git a/drivers/net/wireless/ath/ath10k/mac.c b/drivers/net/wireless/ath/ath10k/mac.c
+--- a/drivers/net/wireless/ath/ath10k/mac.c
++++ b/drivers/net/wireless/ath/ath10k/mac.c
+@@ -5420,6 +5420,7 @@ static void ath10k_stop(struct ieee80211_hw *hw, bool suspend)
+ 	cancel_work_sync(&ar->set_coverage_class_work);
+ 	cancel_delayed_work_sync(&ar->scan.timeout);
+ 	cancel_work_sync(&ar->restart_work);
++	cancel_work_sync(&ar->recovery_check_work);
+ }
+ 
+ static int ath10k_config_ps(struct ath10k *ar)
