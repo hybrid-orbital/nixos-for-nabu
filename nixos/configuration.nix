@@ -73,7 +73,12 @@ in
   ];
 
   # == Identity ===============================================================
-  networking.hostName = "nabu";
+  # networking.hostName is set per storage variant in flake.nix: the ext4 system
+  # keeps "nabu" (the alias of ext4-nabu), the impermanent system uses
+  # "impermanent-nabu".  Both are nixosConfigurations keys/aliases, so the short
+  # `nixos-rebuild switch --flake .` resolves to the profile that is actually
+  # installed instead of silently picking the ext4 config on the impermanent
+  # system (which would produce an unbootable root).
   system.stateVersion = "25.11";
 
   # == Users ==================================================================

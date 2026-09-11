@@ -23,18 +23,22 @@ git switch -c my-nabu
 
 ## 日常更新
 
+ext4 系统的主机名是 `nabu`（`ext4-nabu` 的别名），impermanent 系统是
+`impermanent-nabu`，所以下面的命令会按已安装的存储方案自动选中对应配置，
+无需手写 `#hostname`：
+
 ```sh
-sudo nixos-rebuild switch --flake .#nabu
+sudo nixos-rebuild switch --flake .
 ```
 
 它构建系统闭包、更新系统 profile、安装启动条目并激活运行中的配置。
 内核和 initrd 的变更在下一次启动生效。只准备下次启动而不切换当前服务时：
 
 ```sh
-sudo nixos-rebuild boot --flake .#nabu
+sudo nixos-rebuild boot --flake .
 ```
 
-只临时测试用户态配置可用 `nixos-rebuild test --flake .#nabu`；它不把测试结果设成
+只临时测试用户态配置可用 `nixos-rebuild test --flake .`；它不把测试结果设成
 下一次默认启动系统，也不能临时更换当前运行内核。桌面配置更新与可写用户配置的关系见
 [桌面说明](desktop.md#应用与验证)。
 
@@ -85,7 +89,7 @@ boot.loader.systemd-boot.configurationLimit = 10;
 # 示例：明确不再需要 30 天前的 generations 后执行
 sudo nix-collect-garbage --delete-older-than 30d
 # 重新部署菜单，使其与保留的系统 generations 一致
-sudo nixos-rebuild boot --flake .#nabu
+sudo nixos-rebuild boot --flake .
 df -h / /boot/efi
 ```
 

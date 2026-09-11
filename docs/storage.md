@@ -107,8 +107,9 @@ fastboot flash esp esp.img
 
 从 ext4 切换到 Btrfs 是重新安装，会覆盖 `linux` 分区，包括其中的用户数据。
 新版本镜像也不是保留已有持久化数据的更新包；日常更新使用
-`sudo nixos-rebuild boot --flake .#impermanent-nabu`。这个版本不要使用默认的 `.#nabu`，
-否则会选择 ext4 挂载配置。
+`sudo nixos-rebuild boot --flake .`。系统主机名与 flake 的键/别名对应
+（ext4 为 `nabu`，impermanent 为 `impermanent-nabu`），所以省略 `#hostname`
+也会选中当前安装的那套；需要显式指定时仍可写 `--flake .#impermanent-nabu`。
 
 ## 启动、注册与扩容
 

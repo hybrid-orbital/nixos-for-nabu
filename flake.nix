@@ -15,6 +15,17 @@
     }:
     let
       lib = nixpkgs.lib;
+      # nixosConfigurations key for each storage variant.
+      configName = variant: "${variant}-nabu";
+      # Host name baked into each system.  `nixos-rebuild switch --flake .`
+      # (without an explicit #hostname) resolves the current host name to
+      # nixosConfigurations.<host name>, so each variant's host name must be a
+      # key or alias that points at its own configuration:
+      #   ext4        -> "nabu"              (alias of ext4-nabu, keeps the old name)
+      #   impermanent -> "impermanent-nabu"
+      # Without this the impermanent system resolved to the ext4 config and
+      # rebuilt the wrong root filesystem (ending in emergency mode).
+      hostNameFor = variant: if variant == "ext4" then "nabu" else configName variant;
       variants = {
         ext4 = ./nixos/storage/ext4.nix;
         impermanent = ./nixos/storage/impermanent.nix;
@@ -24,6 +35,7 @@
         lib.nixosSystem {
           modules = [
             { nixpkgs.overlays = [ (import ./pkgs) ]; }
+            { networking.hostName = hostNameFor variant; }
             ./nixos/configuration.nix
             variants.${variant}
           ]
@@ -45,7 +57,7 @@
 
       nixosConfigurations =
         lib.mapAttrs' (variant: _: {
-          name = "${variant}-nabu";
+          name = configName variant;
           value = mkSystem variant null;
         }) variants
         // {

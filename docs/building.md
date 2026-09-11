@@ -21,6 +21,10 @@
 `<system>` 支持 `x86_64-linux` 和 `aarch64-linux`。当前没有 `nabu-uki`、
 `nabu-kde`、`nabu-tty` 等输出，后两者属于路线图。
 
+ext4 系统的主机名是 `nabu`（`ext4-nabu` 的别名），impermanent 系统是
+`impermanent-nabu`；两者都是 flake 的键或别名，因此 `sudo nixos-rebuild switch
+--flake .` 会按已安装的存储方案自动选中对应配置，无需手写 `#hostname`。
+
 ## 构建配套镜像
 
 需要 Linux、支持 flakes 的 Nix、网络或完整的本地依赖缓存，以及足够的磁盘和内存。
