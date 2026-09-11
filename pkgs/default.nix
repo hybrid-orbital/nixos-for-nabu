@@ -11,8 +11,10 @@ final: prev: {
   # Device firmware from the postmarketOS firmware repo
   xiaomi-nabu-firmware = final.callPackage ./nabu-firmware.nix { };
 
+  # Touchscreen-as-touchpad emulator for tablet use
+  touchpad-emulator = final.callPackage ./touchpad-emulator.nix { };
+
   # ALSA UCM profile for sm8150-nabu audio — KEPT AS A FALLBACK.
-  #
   # The "correct" long-term fix is to load this UCM profile, but ALSA only
   # searches the alsa-ucm-conf datadir (share/alsa/ucm2), never /etc, and
   # WirePlumber/ACP currently has no working UCM for this card.  The current

@@ -84,6 +84,8 @@ in
       "networkmanager"
       "video"
       "audio"
+      # TouchpadEmulator reads /dev/input/* and writes /dev/uinput
+      "input"
     ];
     initialPassword = lib.mkDefault "nabu";
   };
@@ -132,6 +134,8 @@ in
     git
     usbutils
     alsaUtilsMinimal
+    # Touchscreen-as-touchpad emulator for tablet use
+    touchpad-emulator
   ];
 
   services.openssh = {
@@ -141,6 +145,22 @@ in
       PasswordAuthentication = true; # initial setup convenience
     };
   };
+
+  # == TouchpadEmulator ========================================================
+  # Touchscreen-as-touchpad emulator (pkgs.touchpad-emulator).  nabu's input
+  # devices (touchscreen "NVTCapacitiveTouchScreen", buttons "gpio-keys" and
+  # "pm8941_resin") match the program's built-in device table, so it works
+  # without patches.  It needs: the uinput module for the virtual mouse
+  # device, permission for the `input` group on /dev/uinput (upstream's
+  # LaunchTouchpadEmulator.sh instead uses a pkexec chmod hack), and the user
+  # in `input` (above).  Volume keys still reach the desktop because the
+  # program forwards quick taps as volume events.
+  boot.kernelModules = [ "uinput" ];
+  services.udev.extraRules = ''
+    # TouchpadEmulator: allow the `input` group to create the virtual mouse
+    # device.  Mirrors upstream's 10-uinput.rules.
+    KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input"
+  '';
 
   networking.networkmanager.package = networkManagerNabu;
   networking.modemmanager.enable = false;
