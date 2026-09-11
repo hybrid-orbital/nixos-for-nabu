@@ -125,7 +125,25 @@ in
     xwayland-satellite
     wl-clipboard
     xdg-utils
+    # Touchscreen-as-touchpad emulator for tablet use
+    touchpad-emulator
   ];
+
+  # == TouchpadEmulator ========================================================
+  # Touchscreen-as-touchpad emulator (pkgs.touchpad-emulator).  nabu's input
+  # devices (touchscreen "NVTCapacitiveTouchScreen", buttons "gpio-keys" and
+  # "pm8941_resin") match the program's built-in device table, so it works
+  # without patches.  It needs: the uinput module for the virtual mouse
+  # device, permission for the `input` group on /dev/uinput (upstream's
+  # LaunchTouchpadEmulator.sh instead uses a pkexec chmod hack), and the user
+  # in `input` (above).  Volume keys still reach the desktop because the
+  # program forwards quick taps as volume events.
+  boot.kernelModules = [ "uinput" ];
+  services.udev.extraRules = ''
+    # TouchpadEmulator: allow the `input` group to create the virtual mouse
+    # device.  Mirrors upstream's 10-uinput.rules.
+    KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input"
+  '';
 
   # Validate on the build machine, including when cross-compiling for aarch64.
   # The writable user entry point includes this shared configuration first.
