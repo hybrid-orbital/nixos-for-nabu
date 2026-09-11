@@ -33,7 +33,7 @@ that every hardware feature is supported.
 | Power key | Deliberately ignored pending usable screen-off and suspend/resume support |
 | Boot reliability | Boot sometimes fails; the cause is still under investigation |
 | Wi-Fi MAC address | A new random address is selected on every reboot; it does not remain stable across boots |
-| Wi-Fi hangs after idle | After long idle, ath10k_snoc detects an unresponsive firmware/WMI, recovery fails repeatedly, and Wi-Fi stops working until the driver is reloaded |
+| Wi-Fi hangs after idle | After long idle, ath10k_snoc detects an unresponsive firmware/WMI, recovery fails repeatedly, and Wi-Fi stops working until the driver is reloaded (cause located, upstream fix backported, on-device validation pending) |
 | Image size | The rootfs is large; reducing the closure and splitting configurations are priorities |
 
 The changing Wi-Fi MAC address may affect MAC-based DHCP reservations and network
@@ -46,10 +46,18 @@ distinguish cold boots from warm reboots.
 Wi-Fi may hang after a long idle period: `ath10k_snoc` (WCN3990) detects an
 unresponsive firmware/WMI, attempts automatic recovery, and after repeated
 failures gives up (wedged state), leaving Wi-Fi unusable. The `WARN_ON` in
-`mac.c` seen in dmesg is the result of the failed recovery, not the root cause.
-The root cause is still under investigation and is suspected to relate to SNOC
-power management / WMI timeouts, not the firmware version (firmware is loaded
-via TQFTP and is already HL 3.2.0). Reload the driver manually to recover:
+`mac.c` is the symptom, not the root cause: the recovery bookkeeping in
+`ath10k` could mark the device `WEDGED` because of recoveries that never ran
+(the check ran synchronously on the QMI indication path and queued its work on
+the ordered workqueue, where later triggers were coalesced, so every trigger
+merely consumed a consecutive-failure credit), and `ath10k_start()` then fails
+permanently even though the interface was down. Upstream commit `f35a07a4842a`
+("wifi: ath10k: move recovery check logic into a new work") runs the check on
+its own workqueue and cancels it in `ath10k_stop()`; it is backported here as
+`pkgs/kernel/patches/0004-nabu-ath10k-recovery-check-workqueue.patch`. The
+firmware version is unrelated (firmware is loaded via TQFTP and is already
+HL 3.2.0). Until the backport has been validated on hardware, reload the
+driver manually to recover:
 
 ```sh
 # Option 1 (recommended): rebind the platform device, no extra tools needed

@@ -138,6 +138,18 @@ let
         patch = ./patches/0002-nabu-ath10k-mac-address.patch;
       }
       {
+        # The WCN3990/SNOC firmware can send a fresh QMI FW_READY indication at
+        # any time; ath10k runs that recovery check synchronously in the QMI
+        # path and queues restart_work on the ordered workqueue, where later
+        # triggers are coalesced and never complete ar->driver_recovery. The
+        # resulting failure count can wedge the driver (ATH10K_STATE_WEDGED)
+        # while the interface is down, and the next open then trips
+        # WARN_ON(1) in ath10k_start() -- the "Wi-Fi hangs after idle" symptom.
+        # Backport of upstream f35a07a4842a (fixes c256a94d1b1b), not in 6.17.y.
+        name = "nabu-ath10k-recovery-check-workqueue";
+        patch = ./patches/0004-nabu-ath10k-recovery-check-workqueue.patch;
+      }
+      {
         # adreno_system_suspend() returns -EBUSY when the GPU does not
         # quiesce within 1s, and the PM core treats that as fatal for the
         # whole system suspend -- in both s2idle and deep mode. On sm8150
