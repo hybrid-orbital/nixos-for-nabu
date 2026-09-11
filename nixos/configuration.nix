@@ -110,6 +110,7 @@ in
     extra-trusted-public-keys = [
       "nix-nabu.cachix.org-1:6oBp/ANDnp5za8MMMfz6EpkJbN1jaRlRpPIoKL4tCGM="
     ];
+    trusted-users = ["root" "@wheel"];
   };
   nixpkgs.config.allowUnfree = true;
 
