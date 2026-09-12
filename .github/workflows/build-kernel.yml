@@ -1,0 +1,66 @@
+name: Build kernel and push to Cachix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kernel-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  kernel:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    env:
+      CACHIX_CACHE_NAME: nix-nabu
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check Cachix credentials
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          if [[ -z "$CACHIX_AUTH_TOKEN" ]]; then
+            echo '::error::Set the repository secret CACHIX_AUTH_TOKEN to a token with write access to nix-nabu.'
+            exit 1
+          fi
+
+      - uses: cachix/install-nix-action@v31.11.1
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            extra-substituters = https://nix-nabu.cachix.org
+            extra-trusted-public-keys = nix-nabu.cachix.org-1:6oBp/ANDnp5za8MMMfz6EpkJbN1jaRlRpPIoKL4tCGM=
+            max-jobs = 1
+            cores = 4
+
+      - uses: cachix/cachix-action@v17
+        with:
+          name: ${{ env.CACHIX_CACHE_NAME }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          # Push explicitly below: include cache hits and surface upload failures.
+          skipPush: true
+
+      - name: Build native ARM64 kernel
+        run: |
+          nix build .#nixosConfigurations.nabu.config.system.build.kernel \
+            --no-update-lock-file --print-build-logs --out-link result-kernel
+
+      - name: Push kernel closure to Cachix
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          kernel=$(readlink -f result-kernel)
+          cachix push "$CACHIX_CACHE_NAME" "$kernel"
+          {
+            echo '### Kernel cached'
+            echo "Commit: $GITHUB_SHA"
+            echo "Store path: $kernel"
+            echo "Cache: https://$CACHIX_CACHE_NAME.cachix.org"
+          } >> "$GITHUB_STEP_SUMMARY"

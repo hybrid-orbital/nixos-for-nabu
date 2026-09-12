@@ -1,0 +1,96 @@
+name: Build and package images
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  images:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [ext4, impermanent]
+    env:
+      VARIANT: ${{ matrix.variant }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Free space on the hosted runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          df -h /
+
+      - name: Allow user namespaces for Btrfs image creation
+        if: matrix.variant == 'impermanent'
+        # make-filesystem-image.nix uses unshare --map-root-user for real ownership.
+        # This setting only lasts for this disposable hosted VM.
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          unshare --map-root-user true
+
+      - uses: cachix/install-nix-action@v31.11.1
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          # Runner configuration is separate from the NixOS image's nix.settings.
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            extra-substituters = https://nix-nabu.cachix.org
+            extra-trusted-public-keys = nix-nabu.cachix.org-1:6oBp/ANDnp5za8MMMfz6EpkJbN1jaRlRpPIoKL4tCGM=
+            max-jobs = 1
+            cores = 4
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes zstd
+
+      - name: Build matching ESP and rootfs
+        run: |
+          df -h / /nix
+          nix build ".#$VARIANT-nabu-esp" ".#$VARIANT-nabu-rootfs" \
+            --no-update-lock-file --print-build-logs --out-link result-image
+
+      - name: Compress, split and verify images
+        run: |
+          bash scripts/package-images.sh result-image result-image-1 dist
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "variant=$VARIANT"
+            echo 'system=aarch64-linux'
+            echo "esp=$(readlink -f result-image)"
+            echo "rootfs=$(readlink -f result-image-1)"
+            nix --version
+            sha256sum flake.lock
+          } > dist/BUILD-INFO.txt
+          (cd dist && sha256sum BUILD-INFO.txt >> SHA256SUMS)
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: nabu-${{ matrix.variant }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Summarize artifacts
+        run: |
+          {
+            echo "### $VARIANT images"
+            echo "Commit: $GITHUB_SHA"
+            echo 'Download the artifact and follow RESTORE.txt to verify and decompress it.'
+            echo '```text'
+            ls -lh dist
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -53,7 +53,56 @@ bash scripts/build-image.sh all impermanent
 
 脚本在新的 `result-images/build-*` 目录保存镜像与 `SHA256SUMS`，也可通过 `OUT_DIR`
 指定新目录。它拒绝覆盖同名产物。脚本按顺序构建两个输出，期间应保持工作树不变。
-这是本地构建流程；目前没有已经落地的 GitHub Actions 镜像流水线。
+CI 构建可使用下面的手动工作流。
+
+## 手动 GitHub Actions 构建
+
+工作流文件进入默认分支后，Actions 页面会出现两个 `workflow_dispatch` 工作流。
+两次运行请选择相同分支/tag，并确保对应提交没有变化：
+
+1. **Build kernel and push to Cachix** 构建
+   `.#nixosConfigurations.nabu.config.system.build.kernel`，并显式上传内核闭包至
+   `nix-nabu`。首次运行前，在仓库 Actions secrets 中设置 `CACHIX_AUTH_TOKEN`，
+   token 需要该缓存的写权限。缺少凭据或上传失败会使任务失败，即使内核已经命中缓存。
+2. **Build and package images** 按 ext4、impermanent 两个独立任务构建
+   `.#ext4-nabu-esp`、`.#ext4-nabu-rootfs`、`.#impermanent-nabu-esp`、
+   `.#impermanent-nabu-rootfs`。读取公开缓存无需 Cachix secret；每个方案上传一个
+   Actions artifact，保留 14 天。
+
+两者都使用 `ubuntu-24.04-arm` 原生 ARM64 构建，并为现有 `nix-nabu` 缓存显式设置
+`extra-substituters` 和 `extra-trusted-public-keys`。镜像内的 NixOS 设置不会自动配置
+CI runner。建议先成功运行内核工作流以预热缓存；镜像流程仍可构建缓存缺失的依赖。
+命中缓存要求 derivation 相同，包括内核配置及锁定的输入。两个工作流均不更新
+`flake.lock`。如需更换缓存，应同步修改两个工作流中的 URL/公钥、内核工作流的缓存
+名称及对应 token。
+
+每个 artifact 包含 `esp.img.zst`、`efi-files.zip`、rootfs 的 `.img.zst.part-0000`
+分卷、`SHA256SUMS`、`SHA256SUMS.images`、`RESTORE.txt` 和 `BUILD-INFO.txt`。
+后者记录提交、存储方案、平台、输出 store 路径、Nix 版本和 lock 文件 hash。
+下载并解开 artifact 后，按 `RESTORE.txt` 操作：校验下载文件、按顺序连接分卷并直接
+解压，最后校验原始镜像再刷写。小镜像同样使用 `.part-0000` 命名；单个分卷不能独立
+解压或刷写。
+
+本地也可复用打包脚本：
+
+```sh
+bash scripts/package-images.sh /path/to/esp-output /path/to/rootfs-output ./dist
+# 可选：SPLIT_SIZE=1000M 覆盖默认的 1900 MiB 分卷大小。
+```
+
+输出目录必须尚不存在。脚本支持原始或已压缩的 rootfs，直接将 zstd 输出流传给
+`split`，并校验压缩流，无需额外复制完整 rootfs 或生成合并压缩文件。
+各分卷打包在同一方案的 Actions artifact 内；分卷不能绕过仓库 artifact 总存储配额。
+上传时关闭 ZIP 再压缩，避免重复压缩镜像。
+
+托管 runner 磁盘空间有限，单个任务超时为六小时。镜像任务会清理闲置 SDK 目录并限制
+Nix 并行构建数，但较大的闭包或冷构建仍可能需要更大的 ARM64 runner。后处理节省的是
+导出空间，不能降低 Nix store 和镜像构建临时目录本身的空间需求。impermanent 任务会在
+临时 VM 中允许非特权 user namespace，以支持 Btrfs 镜像所有权设置，适配
+[Ubuntu 24.04 的 AppArmor 限制](https://documentation.ubuntu.com/release-notes/24.04/)。这两个流程生成构建
+产物；发布 release 和真机启动验证仍需单独完成。平台及 artifact 行为参见上游
+[runner 说明](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+和 [artifact action](https://github.com/actions/upload-artifact)。
 
 存储布局、自定义持久化目录和无状态版本的使用说明见[存储方案](storage.md)。
 
@@ -88,7 +137,7 @@ Nix 需要的是原生求值所得闭包，可能重新构建内核和大量包�
 
 并非所有包都一定重编：原生二进制缓存命中或已有匹配产物时会复用。交叉缓存只帮助
 匹配的交叉 derivation；在 PC 上预热交叉镜像不能承诺加速平板的原生 rebuild。
-长期维护可考虑 ARM64 原生构建机及对应缓存，相关设施仍待建设。
+上述手动工作流使用 ARM64 原生 runner 和对应缓存，避免这类差异。
 
 参见 [Nix 官方交叉编译教程](https://nix.dev/tutorials/cross-compilation.html)
 和 [Nixpkgs 跨平台参数](https://nixos.org/manual/nixpkgs/unstable/#ssec-cross-platform-parameters)。

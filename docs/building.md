@@ -59,8 +59,64 @@ bash scripts/build-image.sh all impermanent
 The script stores images and `SHA256SUMS` in a new `result-images/build-*`
 directory, and `OUT_DIR` can point it at another new directory. It refuses to
 overwrite existing artifacts. It builds the two outputs in sequence, so keep the
-working tree unchanged while it runs. This is a local build flow; there is no
-GitHub Actions image pipeline in place yet.
+working tree unchanged while it runs. For CI builds, use the manual workflows below.
+
+## Manual GitHub Actions builds
+
+The Actions tab provides two `workflow_dispatch` workflows once their files are
+on the default branch. Choose the same branch/tag (and unchanged commit) for both:
+
+1. **Build kernel and push to Cachix** builds
+   `.#nixosConfigurations.nabu.config.system.build.kernel` and explicitly uploads
+   its closure to `nix-nabu`. First configure the repository Actions secret
+   `CACHIX_AUTH_TOKEN` with write access to that cache. Missing credentials or a
+   failed upload fail the job, including when the build itself was a cache hit.
+2. **Build and package images** builds `.#ext4-nabu-esp`, `.#ext4-nabu-rootfs`,
+   `.#impermanent-nabu-esp` and `.#impermanent-nabu-rootfs`, in two independent
+   storage-variant jobs. It reads the public cache without a Cachix secret and
+   uploads one Actions artifact per variant, retained for 14 days.
+
+Both workflows use `ubuntu-24.04-arm` for native ARM64 derivations and explicitly
+configure `extra-substituters` and `extra-trusted-public-keys` for the existing
+`nix-nabu` cache. The image's NixOS settings do not configure the CI runner.
+Run the kernel workflow successfully first to warm the cache; image builds can
+still build missing dependencies. Cache reuse requires matching derivations,
+including the kernel configuration and locked inputs. Neither workflow updates
+`flake.lock`. Changing caches requires updating the URL/key in both workflows,
+the kernel workflow's cache name, and its token.
+
+Artifacts contain `esp.img.zst`, `efi-files.zip`, rootfs `.img.zst.part-0000`
+parts, `SHA256SUMS`, `SHA256SUMS.images`, `RESTORE.txt` and `BUILD-INFO.txt`.
+The latter records the commit, variant, platform, output store paths, Nix version
+and lock-file hash. Download and extract the artifact, then follow `RESTORE.txt`:
+verify the packaged checksums, concatenate the rootfs parts into the decompressor,
+and verify the decompressed image checksums before flashing. Even a small rootfs
+has a `.part-0000` file. Parts alone are neither zstd archives nor flashable images.
+
+The reusable packaging command is:
+
+```sh
+bash scripts/package-images.sh /path/to/esp-output /path/to/rootfs-output ./dist
+# Optional: override the default 1900 MiB part size with SPLIT_SIZE=1000M.
+```
+
+The output directory must not exist. Packaging streams zstd directly into `split`,
+accepts either raw or already compressed rootfs outputs, verifies the compressed
+streams, and avoids an extra raw rootfs copy or combined compressed file. Parts
+are bundled into one Actions artifact per variant; splitting does not bypass the
+repository's total artifact storage quota. Upload ZIP compression is disabled
+because the images are already compressed.
+
+Hosted runners have limited disk space and a six-hour job timeout. The image job
+removes unused hosted SDK directories and limits concurrent Nix builds, but a
+large closure or cold build may still need a larger ARM64 runner. Packaging reduces
+export space, not the Nix store or temporary space needed to build the image.
+The impermanent job allows unprivileged user namespaces in its disposable VM for
+Btrfs image ownership, accounting for [Ubuntu 24.04's AppArmor restriction](https://documentation.ubuntu.com/release-notes/24.04/).
+These workflows produce build artifacts; releases and on-device boot validation
+remain separate steps. See the upstream [runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+and [artifact action](https://github.com/actions/upload-artifact) for platform and
+artifact behavior.
 
 See the [storage profile](storage.md) guide for the storage layout, custom
 persistent directories and how to use the impermanent variant.
@@ -104,8 +160,8 @@ increase the time and disk usage of the first rebuild.
 Not every package is necessarily rebuilt: native binary cache hits or matching
 existing outputs are reused. A cross cache only helps matching cross derivations;
 warming a cross image on a PC does not promise to speed up the tablet's native
-rebuild. For long-term maintenance, an ARM64 native builder and a matching cache
-are worth considering, but that infrastructure is still to be built.
+rebuild. The manual workflows above use ARM64 native runners and a matching cache
+to avoid this difference.
 
 See the
 [official Nix cross-compilation tutorial](https://nix.dev/tutorials/cross-compilation.html)

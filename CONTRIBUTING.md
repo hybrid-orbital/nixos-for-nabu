@@ -19,7 +19,8 @@
 - 内核/电源：保留可启动旧代，分别记录冷启动、热重启、输入、显示与休眠恢复。
 
 明确写出“只求值”“构建成功”“QEMU 验证”或“真机验证”，不要混用。
-当前没有自动镜像 CI，旧 `scripts/qemu-smoke.sh` 尚未适配 systemd-boot 产物。
+当前提供[手动内核和镜像 CI](docs/zh_CN/building.md#手动-github-actions-构建)，
+旧 `scripts/qemu-smoke.sh` 尚未适配 systemd-boot 产物。
 
 ## 报告设备问题
 
@@ -38,4 +39,4 @@
 
 特别检查 ESP 刷入 `esp`，不是 `boot`。当前 alpha release 的旧说明存在这个笔误，
 纠正说明见[安装文档](docs/zh_CN/installation.md#刷写到现有分区)。
-未来 GitHub Actions 应自动化构建、校验和发布材料生成，但实机验证仍需独立记录。
+GitHub Actions 已支持手动构建、校验和打包材料生成；release 发布与实机验证仍需独立完成和记录。
