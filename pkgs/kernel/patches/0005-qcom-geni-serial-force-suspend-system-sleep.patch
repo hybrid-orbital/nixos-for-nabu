@@ -1,0 +1,89 @@
+From: NixOS for nabu
+Subject: [PATCH] serial: qcom-geni: force runtime suspend during system sleep
+
+During system sleep the PM core's prepare phase pins a runtime PM
+reference on every device (device_prepare() -> pm_runtime_get_noresume(),
+"block runtime suspend here, during the prepare phase"), which is only
+dropped again in device_complete().  qcom_geni_serial_suspend() relies on
+uart_suspend_port() -> uart_change_pm(UART_PM_STATE_OFF) ->
+pm_runtime_put_sync() to reach the runtime-suspend callback, but that put
+can only bring the usage count back down to the reference held by the PM
+core.  qcom_geni_serial_runtime_suspend() therefore never runs for a port
+that is kept open across system sleep (e.g. a Bluetooth serdev), so
+geni_serial_resources_off() -> geni_se_resources_off() never runs either.
+
+Besides leaving the SE clocks and interconnect enabled, that skips
+pinctrl_pm_select_sleep_state(), so the QUP pads stay muxed to their
+peripheral function with bias-disable instead of being switched to the
+"sleep" pinctrl state (GPIO input, RX pull-up) that boards such as the
+Xiaomi Pad 5 (sm8150/nabu) provide for their Bluetooth UART.  The result
+is a floating/noisy RX pad and a TLMM wake-IRQ status that is latched
+while the dedicated wake IRQ is masked; the PM core then arms that wake
+IRQ in dpm_suspend_noirq and the latched edge fires immediately, so the
+system resumes from suspend-to-idle right away.
+
+Fix this by calling pm_runtime_force_suspend() at the end of
+qcom_geni_serial_suspend() and pm_runtime_force_resume() at the start of
+qcom_geni_serial_resume(), so the runtime-suspend callback always runs
+regardless of the usage count.
+
+Backport of upstream d0cd9c8d0fd59bc7d140f3d60cf02e1d80376dab
+("serial: qcom-geni: add force suspend/resume to system sleep
+callbacks"), which is in tty-next but not in 6.17.y.  The upstream patch
+also warns about a runtime_error; that part is a later refactoring and is
+not required here.
+
+diff --git a/drivers/tty/serial/qcom_geni_serial.c b/drivers/tty/serial/qcom_geni_serial.c
+--- a/drivers/tty/serial/qcom_geni_serial.c
++++ b/drivers/tty/serial/qcom_geni_serial.c
+@@ -2018,6 +2018,7 @@
+ 	struct qcom_geni_serial_port *port = dev_get_drvdata(dev);
+ 	struct uart_port *uport = &port->uport;
+ 	struct qcom_geni_private_data *private_data = uport->private_data;
++	int ret;
+ 
+ 	/*
+ 	 * This is done so we can hit the lowest possible state in suspend
+@@ -2027,7 +2028,30 @@
+ 		geni_icc_set_tag(&port->se, QCOM_ICC_TAG_ACTIVE_ONLY);
+ 		geni_icc_set_bw(&port->se);
+ 	}
+-	return uart_suspend_port(private_data->drv, uport);
++
++	ret = uart_suspend_port(private_data->drv, uport);
++	if (ret)
++		return ret;
++
++	/*
++	 * uart_suspend_port() only drops the runtime PM reference that
++	 * uart_startup() took. During system sleep the PM core holds its own
++	 * reference from device_prepare(), so the usage count never reaches
++	 * zero here and qcom_geni_serial_runtime_suspend() is not invoked.
++	 * That leaves the SE clocks/interconnect enabled and, more
++	 * importantly, skips pinctrl_pm_select_sleep_state() in
++	 * geni_se_resources_off(), so the pads stay in their "default" state
++	 * instead of the "sleep" state. Force the runtime suspend so the
++	 * resources are really gated and the sleep pinctrl (GPIO mode with
++	 * the RX pull-up) is applied before the wake IRQ gets armed.
++	 *
++	 * When no_console_suspend is set the console must remain active
++	 * across system sleep, so skip the force suspend path.
++	 */
++	if (!console_suspend_enabled && uart_console(uport))
++		return 0;
++
++	return pm_runtime_force_suspend(dev);
+ }
+ 
+ static int qcom_geni_serial_resume(struct device *dev)
+@@ -2037,6 +2061,10 @@
+ 	struct uart_port *uport = &port->uport;
+ 	struct qcom_geni_private_data *private_data = uport->private_data;
+ 
++	ret = pm_runtime_force_resume(dev);
++	if (ret)
++		return ret;
++
+ 	ret = uart_resume_port(private_data->drv, uport);
+ 	if (uart_console(uport)) {
+ 		geni_icc_set_tag(&port->se, QCOM_ICC_TAG_ALWAYS);

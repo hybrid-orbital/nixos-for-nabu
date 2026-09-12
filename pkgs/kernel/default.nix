@@ -159,6 +159,31 @@ let
         patch = ./patches/0003-nabu-adreno-do-not-abort-system-suspend.patch;
       }
       {
+        # Bluetooth UART (c8c000.serial / uart13) wake handling.
+        #
+        # During system sleep the PM core pins a runtime PM reference on every
+        # device in the prepare phase (device_prepare ->
+        # pm_runtime_get_noresume), so the pm_runtime_put_sync() that
+        # uart_suspend_port() performs via uart_change_pm(UART_PM_STATE_OFF)
+        # can never drive the usage count to zero. For a port that stays open
+        # across system sleep -- which is exactly the case for the WCN3991
+        # Bluetooth serdev -- qcom_geni_serial_runtime_suspend() is therefore
+        # never invoked, geni_serial_resources_off() never runs and
+        # pinctrl_pm_select_sleep_state() is skipped. The QUP13 pads then stay
+        # in their "default" state (function qup13, bias-disable) rather than
+        # switching to qup_uart13_sleep (GPIO input, RX pull-up), so the
+        # floating/noisy RX pad plus the TLMM status latched while the
+        # dedicated wake IRQ is masked make the armed GPIO46 wake IRQ fire
+        # immediately and the system resumes from suspend-to-idle right away.
+        #
+        # Backport of upstream d0cd9c8d0fd5 ("serial: qcom-geni: add force
+        # suspend/resume to system sleep callbacks"), in tty-next but not 6.17.y.
+        # The BT controller, the wake IRQ and the wake capability all remain
+        # functional; only the GENI SE power/pin state during system sleep changes.
+        name = "qcom-geni-serial-force-suspend-system-sleep";
+        patch = ./patches/0005-qcom-geni-serial-force-suspend-system-sleep.patch;
+      }
+      {
         # The MI_DRM_BLANK_UNBLANK notifier was sent in pre_enable(), before the
         # DSI host was enabled and before the panel had a chance to prepare/enable.
         # This caused the touchscreen driver to resume before the display was
