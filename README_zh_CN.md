@@ -11,36 +11,36 @@
 本分支在此基础上推进验证、Nixpkgs 原生启动管理和日常桌面使用。
 本项目离不开诸多其它项目的工作与贡献。有关的项目与贡献者详见下方致谢。
 
-## 存储版本
+## 文件系统版本
 
-仓库提供两套存储配置，开箱即可选择。两者共用现有 GPT 中的 `esp` 与 `linux` 分区，不重新分区：
+仓库提供两套文件系统配置，开箱即用。两者都使用 `esp` (用作/boot) 与 `linux` (用作/) 分区，不重新分区：
 
 - **`ext4-nabu`（默认，主机名 `nabu`）**：常规 ext4 根文件系统，适合一般用途和日常使用。
 - **`impermanent-nabu`**：偏激进的 tmpfs root 方案，面向希望「无状态根 + 声明式持久化」的
   Nix 用户。`/` 为 tmpfs（上限为内存的 25%），`/nix`、`/nix/persistent` 与 `/home` 位于同一
-  Btrfs 分区的子卷，重启只丢弃根目录内容。仓库已为该方案准备好 btrfs 镜像目标
-  （`nabu-rootfs.btrfs.img`），但仍需实机验证。
+  Btrfs 分区的子卷，重启只丢弃根目录内容。
 
 目录布局、持久化清单、声明式密码与迁移方式见[存储方案](docs/zh_CN/storage.md)。
 
 ## 当前发布
 
-[**v0.1.0-alpha**](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v0.1.0-alpha)
-对应提交 `c26c2c1` 正式采用 systemd-boot 的引导方案，维护者通过实机验证 systemd-boot、generation 菜单和
-niri + Noctalia 镜像可用，但仍缺乏更充分的测试，并不意味着所有硬件功能已完成适配。
+[**v2026.09.12.1.1**](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v2026.09.12.1.1)
+对应提交 `51763f8`，由 GitHub Actions 在原生 ARM64 环境构建并发布，提供 ext4 和
+tmpfs root + Btrfs 两套配套 ESP/rootfs 镜像、压缩分卷、校验文件及构建记录。
+本次发布包含挂起、屏幕唤醒和 Wi-Fi 相关修复，以及触屏输入和固件体积优化。
+CI 构建成功不等于实机验证；无状态版本的完整实机回归测试仍待完成。
 
 ### 已知问题
 
 | 项目 | 当前限制 |
 | --- | --- |
-| 相机 | 尚不可用 |
-| 低功耗休眠 | 可进入 s2idle 且不再秒醒（蓝牙 UART 唤醒问题已修复并实机验证）；电源键、自动挂起与待机功耗仍需推进 |
-| 电源键 | 当前被刻意忽略，实用的熄屏、休眠和唤醒方案仍需适配 |
-| 启动可靠性 | 偶尔启动失败，原因仍待排查 |
 | Wi-Fi 久置卡死 | 空闲较久后 ath10k_snoc 检测到固件/WMI 无响应并反复恢复失败，Wi-Fi 失效，需手动重载驱动（仍待长期观察） |
-
-其余硬件也需要更完整的测试记录，不能仅凭配置中启用驱动就认为已经验证。报告问题时请
-附上镜像版本、固件版本、重现步骤和日志；启动失败请区分冷启动与热重启。
+| 低功耗休眠 | 目前修复后可通过 `systemctl suspend` 进入 s2idle；待机功耗需进一步确定 |
+| 电源键 | 出于实用性的考量，logind 会忽略电源键的行为，交给桌面环境处理。按下电源键不会进入挂起（但仍能触发从挂起中恢复）|
+| 启动可靠性 | 偶尔启动失败，原因仍待排查 |
+| 扬声器 | 右上角的扬声器尚不可用、可能存在爆音问题 |
+| 麦克风 | 尚不可用 |
+| 相机 | 尚不可用 |
 
 ### 已修复或已缓解
 
@@ -115,66 +115,53 @@ sudo systemctl start NetworkManager
 
 </details>
 
-### 现在提供与后续计划
+### 后续计划
 
-**现在提供**
-
-- systemd-boot 原生 generation 菜单、Android 启动入口
-- niri + Noctalia 桌面及登录界面；横屏菜单、登录界面、桌面及数位笔输出映射
-- ext4 镜像，以及实验性的 tmpfs root + Btrfs 版本
-- ARM64 原生构建与 x86_64 交叉构建入口；本地镜像导出脚本
-
-**后续计划**
-
-- **构建与缓存：** 改善交叉构建入口和错误提示，记录兼容性；探索 ARM64 原生 builder 与
-  二进制缓存，降低平板首次 rebuild 的成本。
-- **系统与体积：** 测量闭包和大依赖，缩减 rootfs，拆分公共设备模块与 TTY、niri、KDE
-  配置；验证 Btrfs/Impermanence 版本在平板上的行为，完善恢复流程。
-- **设备适配：** 排查偶发启动失败，推进相机支持；完成电源键、熄屏、低功耗休眠与唤醒，
-  并测量实际待机功耗。
-- **CI 与发布：** 建设 GitHub Actions 求值检查和镜像构建，完善缓存、校验值、压缩分卷与
-  发布记录；自动构建结果和真机测试结果分别记录。
-- **文档与协作：** 保持中英文首页、安装步骤与设备状态同步，为新配置提供可复现的用法和
-  验证记录，逐步补齐详细指南的英文版本。
+- 提供 TTY、niri、KDE 等配置变体，缩减 rootfs 体积。
+- 将目前的配置拆分成 NixOS 模块；通过 flake 提供只包含硬件相关配置的模块，方便在其它项目中导入。
+- 排查仍存在的硬件问题。
 
 这些是计划工作，目标是[路线图](docs/zh_CN/roadmap.md)，已实现与已验证的部分见
-[设备状态](docs/zh_CN/device-status.md)。目前没有独立 TTY/KDE 输出或自动镜像 CI；
+[设备状态](docs/zh_CN/device-status.md)。目前没有独立 TTY/KDE 输出；
 欢迎提交带有配置、日志和验证结果的改进，提交与测试约定见[贡献指南](CONTRIBUTING.md)。
 
 ## 安装发布镜像
 
-从 [v0.1.0-alpha 发布页](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v0.1.0-alpha)
-下载 `esp.img`、`nabu-rootfs.ext4.img.zst.part00` 和 `nabu-rootfs.ext4.img.zst.part01`。
-`efi-files.zip` 是 ESP 文件归档，供检查或手动部署，不是分区镜像。
+从 [v2026.09.12.1.1 发布页](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v2026.09.12.1.1)
+下载所选版本前缀（`ext4-nabu-` 或 `impermanent-nabu-`）的全部附件，包括 ESP 镜像、
+所有 rootfs 分卷、校验文件、`RESTORE.txt` 和 `BUILD-INFO.txt`。
+`*-esp.zip` 是 ESP 文件归档，供检查或手动部署，不是分区镜像。
+ESP 与 rootfs 必须来自同一发布和同一文件系统版本。以下以 ext4 为例；无状态版本将
+命令中的 `ext4-nabu-` 全部替换为 `impermanent-nabu-`。
 
 本仓库**不生成 Aloha UEFI / DBKP，也不自动分区**。下面步骤仅适用于已经具备
 可用 Aloha/双启动环境、关闭 Secure Boot，且拥有 `esp` 和 `linux` 分区的 nabu。
-`esp` 为 FAT EFI 系统分区，挂载于 `/boot/efi`；`linux` 为 ext4 根分区。
+`esp` 为 FAT EFI 系统分区，挂载于 `/boot/efi`；`linux` 承载 ext4 或 Btrfs 文件系统。
 刷写会覆盖现有 ESP 和 Linux 数据，操作前备份并确认分区容量。
 
-将两个 rootfs 分卷放在同一目录，依次合并并解压：
+将所选版本的全部附件放在同一目录，校验下载文件、合并解压，再校验原始镜像：
 
 ```sh
-cat nabu-rootfs.ext4.img.zst.part00 nabu-rootfs.ext4.img.zst.part01 > nabu-rootfs.ext4.img.zst
-zstd -t nabu-rootfs.ext4.img.zst
-zstd -d nabu-rootfs.ext4.img.zst
+sha256sum -c ext4-nabu-SHA256SUMS
+cat ext4-nabu-rootfs.image.zst.part-* | zstd -d --sparse -o ext4-nabu-rootfs.image
+sha256sum -c ext4-nabu-SHA256SUMS.images
 ```
 
-为分卷、合并压缩包和解压镜像预留磁盘空间；设备分区需要容纳**解压后的镜像**。
-ESP 镜像为 350105600 字节。此次发布未附 `SHA256SUMS`，`zstd -t` 只检查压缩流完整性。
+为分卷和解压镜像预留磁盘空间；设备分区需要容纳**解压后的镜像**。
+确认所有校验通过，并按镜像的实际大小检查分区容量。
 进入支持该分区布局的 fastboot 环境，确认目标设备及分区后刷写：
 
 ```sh
 fastboot devices
 fastboot getvar partition-size:esp
 fastboot getvar partition-size:linux
-fastboot flash linux nabu-rootfs.ext4.img
-fastboot flash esp esp.img
+fastboot flash linux ext4-nabu-rootfs.image
+fastboot flash esp ext4-nabu-esp.image
 fastboot reboot
 ```
 
 如果无法查询或访问这些分区，先检查设备模式与布局，不要猜测其他分区名。
-首次启动会将 rootfs 扩展到已有 `linux` 分区大小。
+首次启动会将 ext4 或 Btrfs 文件系统扩展到已有 `linux` 分区大小。
 
 进入 Noctalia 登录界面后，默认用户和初始密码均为 **`nabu`**。ext4 版本登录后运行
 `passwd` 修改密码；无状态版本使用[声明式密码](docs/zh_CN/storage.md#无状态版本的密码)。
@@ -214,9 +201,9 @@ nixpkgs 的 systemd-boot 安装器部署并管理各代。初始文件与旧 UKI
 ```sh
 git clone https://github.com/hybrid-orbital/nixos-for-nabu.git
 cd nixos-for-nabu
-# 分支名可以自取；起点既可以是发布标签（v0.1.0-alpha、后续版本…），
+# 分支名可以自取；起点既可以是发布标签（v2026.09.12.1.1、后续版本…），
 # 也可以是 main 或其他分支
-git switch -c my-nabu v0.1.0-alpha
+git switch -c my-nabu v2026.09.12.1.1
 ```
 
 修改配置后，新文件需要先 `git add` 才能被 Git flake 读取。
@@ -250,13 +237,13 @@ Nix store 的历史系统。清理前保留已验证可启动的版本，具体�
 从旧安装保留数据迁移时不要直接刷写 rootfs：备份后使用设备上的 `nixos-rebuild boot`
 部署并验证新启动入口，完整迁移与首次启动说明见[安装指南](docs/zh_CN/installation.md)。
 
-## 构建入口
+## 构建
 
-仓库预设的 `nixos/configuration.nix` 已经把 `https://nix-nabu.cachix.org` 加入
-`nix.settings.extra-substituters`（并带上对应的 `extra-trusted-public-keys`）。该缓存
-预构建了 `nixosConfigurations.nabu.config.system.build.kernel` 等产物，所以平板上普通
-`nixos-rebuild` 通常不必重新编译内核。如果要在别的 Nix 机器（包括交叉构建主机）上构建，
-把那两行加到那台机器的配置里即可：
+### 二进制缓存
+
+仓库预设的 `nixos/configuration.nix` 包含了一个 Cachix 二进制缓存 `https://nix-nabu.cachix.org`。该缓存通过 GitHub Actions 提供 `nixosConfigurations.nabu.config.system.build.kernel` 的构建产物，所以在平板上使用 `nixos-rebuild` 通常不必重新编译内核。
+
+如果要在别的 Nix 机器（包括交叉构建主机）上构建，可以考虑把该缓存添加到那台机器的配置里：
 
 ```nix
 nix.settings.extra-substituters = [ "https://nix-nabu.cachix.org" ];
@@ -264,34 +251,55 @@ nix.settings.extra-trusted-public-keys = [
   "nix-nabu.cachix.org-1:6oBp/ANDnp5za8MMMfz6EpkJbN1jaRlRpPIoKL4tCGM="
 ];
 ```
+### Flake outputs
 
-在启用了 flakes 的 Linux/Nix 环境，按上面的命令检出仓库，从仓库目录运行：
+在启用了 flakes 的 Linux/Nix 环境，检出仓库，从仓库目录运行：
 
 ```sh
-# 配套构建；保持源码、flake.lock 与本地配置一致
-nix build .#nabu-esp .#nabu-rootfs
+# 内核（第二条命令始终选择原生 ARM64 配置）
+nix build .#nabu-kernel
+nix build .#nixosConfigurations.nabu.config.system.build.kernel
 
-# 导出 esp.img、efi-files.zip、rootfs 和 SHA256SUMS 到新的目录
-# 尚未测试该脚本是否有效，建议手动拷贝 nix build 的产物到你喜欢的地方
-bash scripts/build-image.sh
+# ext4 的 ESP 文件与镜像、rootfs 镜像
+nix build .#ext4-nabu-esp
+nix build .#nabu-esp       # ext4-nabu-esp 的别名
+nix build .#ext4-nabu-rootfs
+nix build .#nabu-rootfs    # ext4-nabu-rootfs 的别名
+
+# Btrfs + tmpfs root
+nix build .#impermanent-nabu-esp
+nix build .#impermanent-nabu-rootfs
+
+# 系统闭包（原生 ARM64 配置）
+nix build .#nixosConfigurations.impermanent-nabu.config.system.build.toplevel
+nix build .#nixosConfigurations.ext4-nabu.config.system.build.toplevel
 ```
 
-当前只有 `nixosConfigurations.nabu`，包含 niri + Noctalia。`nabu-esp`、
-`nabu-rootfs`、`nabu-kernel` 提供 `x86_64-linux` 和 `aarch64-linux` 输出；默认输出为 ESP。
-导出脚本默认写入新的 `result-images/build-*` 目录，并拒绝覆盖同名产物。
-ESP 和 rootfs 必须配套构建，不能混用不同提交、配置或原生/交叉构建的产物。
-构建期间保持工作树和 lock 不变，并准备足够磁盘、内存和依赖缓存或网络。
+ESP 与 rootfs 必须使用相同的源码、`flake.lock`、配置和构建平台，构建期间保持这些输入不变。
 
-**交叉构建特别说明：** x86_64 → aarch64 与 aarch64 原生构建使用不同的
-`buildPlatform` 和构建依赖，通常产生不同的 derivation/store 路径。交叉镜像在平板上
-启动后，首次原生 rebuild 仍可能重新构建内核和大量包；已有交叉产物不能保证命中原生缓存。
-这来自构建输入差异，不是更换机器本身改变 hash；已有匹配产物或原生缓存仍可复用。
-虽然 flake 暴露了交叉构建入口，但是不能保证交叉编译能通过，不同的平台可能需要对nixpkgs做不同的override; 
+**关于交叉编译**
 
-在本地有 aarch64-linux builder 或者已存在缓存的情况下，可以使用`nix build .#packages.aarch64-linux.<>` 指定 flake outputs 的 system 参数来选择原生 ARM64 输出，不使用交叉编译；
+在 `x86_64-linux` 上运行 `nix build .#nabu-kernel` 或上述简写的镜像输出时，
+flake 会选择 x86_64 → aarch64 交叉编译。在 `aarch64-linux` 上则选择原生构建。
+两者的 `buildPlatform` 和构建依赖不同，通常产生不同的 derivation 和 store 路径；
+交叉镜像在平板上首次原生 rebuild 时，可能需要重新构建内核和大量包，除非已有匹配的原生产物或缓存。
 
-当前 flake 输出未压缩 rootfs；release 中的 zstd 压缩与分卷是发布时的额外处理。
-旧 `scripts/qemu-smoke.sh` 尚未适配当前非 UKI 产物，不能作为本版本的测试入口。更多排障与测量方法见[构建指南](docs/zh_CN/building.md)。
+交叉编译入口是项目早期只有 `x86_64-linux` 构建机器时的变通方案。随着 nixpkgs 更新，
+不能保证它始终可用，可能需要额外的 override。当前 flake 没有 `aarch64-darwin` 包输出；
+在 Apple Silicon 上可通过 `aarch64-linux` 虚拟机或远程 Linux builder 构建原生产物。
+
+显式选择原生 ARM64 包输出：
+
+```sh
+nix build .#packages.aarch64-linux.nabu-kernel
+```
+
+这只选择输出平台，不会自动配置 builder。实际构建需要 `aarch64-linux` builder，
+或在 NixOS Linux 主机上启用 `boot.binfmt.emulatedSystems = [ "aarch64-linux" ];`
+以使用模拟执行；若全部产物已命中缓存，则无需本地编译。
+
+更多说明见[构建指南](docs/zh_CN/building.md)。
+
 
 ## 进一步阅读
 
@@ -331,10 +339,16 @@ nabu 上的 Linux 也依赖多个社区持续推进固件、内核、设备服�
 
 ### 内核补丁来源
 
-`pkgs/kernel/patches/` 下的改动来自以下作者与上游提交，本仓库只做回移与适配：
+`pkgs/kernel/patches/` 下的改动包含上游回移和本地适配，已核实的来源如下：
 
-- **`0001-nabu-match-fedora-runtime-fixes.patch`**：sm8150 主线 fork 的下游修复，作者
-  **Nicola Guerrera**（提交 `53a8b558`、`01fc3dd3`、`6963e380`）。
+- **`0001-nabu-match-fedora-runtime-fixes.patch`**：本仓库提交
+  [`f1a0391`](https://github.com/hybrid-orbital/nixos-for-nabu/commit/f1a039140353fad1d336751e42c95a530056e5ba)
+  引入的组合补丁。其中关闭霍尔传感器唤醒、修正触屏 `getClient(void)` 声明、移除
+  idtp9418 未初始化变量及日志的改动，分别与 **Nicola Guerrera** 的上游提交
+  [`53a8b558`](https://gitlab.com/sm8150-mainline/linux/-/commit/53a8b55839d1cd4be6dc25f11aeb93e8348cc270)、
+  [`01fc3dd3`](https://gitlab.com/sm8150-mainline/linux/-/commit/01fc3dd3c8317362bcddd9eab9f243909621a4a0)、
+  [`6963e380`](https://gitlab.com/sm8150-mainline/linux/-/commit/6963e3800a8e8059c5f01b01dd8e2a5e6a28209a)
+  一致。
 - **`0001-drm-msm-dsi-Move-MI_DRM_BLANK_UNBLANK-notification-t.patch`**：
   **TwinbornPlate75** `<3342733415@qq.com>`，提交 `bc048e06`。
 - **`0002-nabu-ath10k-mac-address.patch`**：方案源自

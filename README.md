@@ -14,10 +14,10 @@ This fork builds on that foundation through validation, native Nixpkgs boot
 management and everyday desktop use. This project depends on the work and
 contributions of many other projects, credited below.
 
-## Storage variants
+## Filesystem variants
 
-Two storage profiles are available out of the box. Both reuse the existing GPT
-`esp` and `linux` partitions and do not repartition the device:
+Two filesystem profiles are available out of the box. Both use the
+`esp` (as /boot) and `linux` (as /) partitions and do not repartition the device:
 
 - **`ext4-nabu` (default, host name `nabu`)**: a conventional ext4 root
   filesystem, suitable for general and everyday use.
@@ -25,34 +25,33 @@ Two storage profiles are available out of the box. Both reuse the existing GPT
   users who want a stateless root with declarative persistence. `/` is tmpfs
   (capped at 25% of RAM) while `/nix`, `/nix/persistent` and `/home` live in
   subvolumes of the same Btrfs partition, so only the root directory is discarded
-  on reboot. The repository already provides a btrfs image target for it
-  (`nabu-rootfs.btrfs.img`), which still needs hardware validation.
+  on reboot.
 
 Directory layout, the persistence list, declarative passwords and migration are
 covered in the [storage guide](docs/storage.md).
 
 ## Current release
 
-[**v0.1.0-alpha**](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v0.1.0-alpha),
-at commit `c26c2c1`, formally adopts systemd-boot as the boot architecture.
-The maintainer has verified systemd-boot, the generation menu and the niri + Noctalia
-image on hardware. More thorough testing is still needed; this does not mean
-that every hardware feature is supported.
+[**v2026.09.12.1.1**](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v2026.09.12.1.1),
+at commit `51763f8`, is built and published by GitHub Actions on native ARM64.
+It provides matching ESP/rootfs images for ext4 and tmpfs root + Btrfs, split
+compressed archives, checksums and build records. This release includes suspend,
+display wake and Wi-Fi fixes, along with touchscreen input and firmware size improvements.
+A successful CI build does not establish hardware validation; full on-device
+regression testing of the impermanent variant remains pending.
 
 ### Known issues
 
 | Area | Current limitation |
 | --- | --- |
-| Camera | Not working |
-| Low-power suspend | s2idle is reachable and no longer wakes immediately (Bluetooth UART wake fixed and validated on hardware); power key, auto-suspend and standby power still pending |
-| Power key | Deliberately ignored pending usable screen-off and suspend/resume support |
-| Boot reliability | Boot sometimes fails; the cause is still under investigation |
-| Wi-Fi hangs after idle | After long idle, ath10k_snoc detects an unresponsive firmware/WMI, recovery fails repeatedly, and Wi-Fi stops working until the driver is reloaded (still under long-term observation) |
+| Wi-Fi hangs after long idle | ath10k_snoc detects unresponsive firmware/WMI and repeatedly fails recovery; Wi-Fi becomes unusable and requires a manual driver reload (still under long-term observation) |
+| Low-power suspend | With the fixes, `systemctl suspend` enters s2idle; standby power consumption needs further measurement |
+| Power key | For practical use, logind ignores the power key and leaves it to the desktop environment. Pressing it does not suspend the device, but can still wake it from suspend |
+| Boot reliability | Occasional boot failures; cause under investigation |
+| Speakers | The upper-right speaker is unavailable; popping may occur |
+| Microphone | Not working yet |
+| Cameras | Not working yet |
 
-Other hardware needs fuller test records; enabling a driver in the
-configuration is not evidence of hardware validation. When reporting a problem,
-include the image version, firmware version, reproduction steps and logs;
-distinguish cold boots from warm reboots.
 
 ### Fixed or mitigated
 
@@ -122,7 +121,7 @@ echo 18800000.wifi | sudo tee /sys/bus/platform/drivers/ath10k_snoc/unbind
 echo 18800000.wifi | sudo tee /sys/bus/platform/drivers/ath10k_snoc/bind
 nmcli radio wifi on
 
-# Option 2: unload/reload the kernel module (modprobe is not on the default PATH; run `nix shell nixpkgs#kmod` first)
+# Option 2: unload/reload the kernel module
 sudo systemctl stop NetworkManager
 sudo modprobe -r ath10k_snoc
 sudo modprobe ath10k_snoc
@@ -144,80 +143,63 @@ even though the interface was down.
 
 </details>
 
-### Provided now and planned work
+### Planned work
 
-**Provided now**
+- Provide configuration variants such as TTY, niri and KDE, and reduce rootfs size.
+- Split the current configuration into NixOS modules and expose a hardware-only module through the flake for use in other projects.
+- Investigate the remaining hardware issues.
 
-- Native systemd-boot generations and an Android boot entry
-- niri + Noctalia desktop and greeter; landscape boot menu, greeter, desktop and pen mapping
-- ext4 images, plus an experimental tmpfs root + Btrfs variant
-- Native ARM64 and x86_64 cross-build entry points; local image export script
-
-**Planned work**
-
-- **Builds and caches:** improve cross-build entry points and diagnostics, track
-  compatibility, and explore native ARM64 builders and binary caches to reduce the
-  first on-device rebuild cost.
-- **System and image size:** measure dependencies, shrink the rootfs and split
-  common device modules from the TTY, niri and KDE configurations; validate the
-  Btrfs/Impermanence variant on hardware and document recovery.
-- **Device support:** investigate intermittent boot failures, work on cameras, and
-  implement usable power-key behaviour, screen-off and low-power suspend/resume
-  with measured standby power.
-- **CI and releases:** build GitHub Actions evaluation checks and image builds,
-  improve caching, checksums, split archives and release records, and report
-  automated builds and hardware validation separately.
-- **Documentation and contributions:** keep both READMEs, installation steps and
-  device status aligned; document reproducible usage and validation for new
-  variants, and translate the detailed guides.
-
-These are planned tasks. Targets are tracked in the
-[roadmap](docs/roadmap.md), and what is implemented and validated
-in [device status](docs/device-status.md). Separate TTY/KDE outputs
-and automated image CI are not available yet. Contributions with configuration
+These are planned tasks. Targets are tracked in the [roadmap](docs/roadmap.md),
+and implemented and validated features in [device status](docs/device-status.md).
+Separate TTY/KDE outputs are not available yet. Contributions with configuration
 details, logs and validation results are welcome; see the
 [contribution guide](CONTRIBUTING.md) (Chinese).
 
+
 ## Install a release image
 
-Download `esp.img`, `nabu-rootfs.ext4.img.zst.part00` and
-`nabu-rootfs.ext4.img.zst.part01` from the
-[v0.1.0-alpha release](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v0.1.0-alpha).
-`efi-files.zip` is an archive of ESP files for inspection or manual deployment,
-not a partition image.
+Download all assets with your chosen variant's prefix (`ext4-nabu-` or
+`impermanent-nabu-`) from the
+[v2026.09.12.1.1 release](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v2026.09.12.1.1),
+including the ESP image, all rootfs parts, checksums, `RESTORE.txt` and `BUILD-INFO.txt`.
+`*-esp.zip` is an archive of ESP files for inspection or manual deployment,
+not a partition image. Use matching ESP and rootfs images from the same release
+and filesystem variant. The commands below use ext4; for the impermanent variant,
+replace every `ext4-nabu-` prefix with `impermanent-nabu-`.
 
 This repository **does not build Aloha UEFI / DBKP or partition the device**.
 These steps require a nabu with a working Aloha/dual-boot environment, Secure Boot
 disabled, and existing `esp` and `linux` partitions. `esp` is the FAT EFI system
-partition mounted at `/boot/efi`; `linux` is the ext4 root partition. Flashing
-overwrites existing ESP and Linux data. Back up first and check partition sizes.
+partition mounted at `/boot/efi`; `linux` holds the ext4 or Btrfs filesystem.
+Flashing overwrites existing ESP and Linux data. Back up first and check partition sizes.
 
-Place both rootfs parts in one directory, then reassemble and decompress:
+Place all assets for your variant in one directory, verify the downloads,
+reassemble and decompress the rootfs, then verify the raw images:
 
 ```sh
-cat nabu-rootfs.ext4.img.zst.part00 nabu-rootfs.ext4.img.zst.part01 > nabu-rootfs.ext4.img.zst
-zstd -t nabu-rootfs.ext4.img.zst
-zstd -d nabu-rootfs.ext4.img.zst
+sha256sum -c ext4-nabu-SHA256SUMS
+cat ext4-nabu-rootfs.image.zst.part-* | zstd -d --sparse -o ext4-nabu-rootfs.image
+sha256sum -c ext4-nabu-SHA256SUMS.images
 ```
 
-Allow disk space for the parts, combined archive and decompressed image. The device
-partition must fit the **decompressed image**. The ESP image is 350105600 bytes.
-This release has no `SHA256SUMS` asset; `zstd -t` only checks compressed-stream integrity.
-Enter a fastboot environment that supports this layout, verify the device and
-partitions, then flash:
+Allow disk space for the parts and decompressed image. The device partition must
+fit the **decompressed image**. Confirm that all checksums pass and check partition
+capacity against the actual image sizes. Enter a fastboot environment that supports
+this layout, verify the device and partitions, then flash:
 
 ```sh
 fastboot devices
 fastboot getvar partition-size:esp
 fastboot getvar partition-size:linux
-fastboot flash linux nabu-rootfs.ext4.img
-fastboot flash esp esp.img
+fastboot flash linux ext4-nabu-rootfs.image
+fastboot flash esp ext4-nabu-esp.image
 fastboot reboot
 ```
 
 If these partitions cannot be queried or accessed, check the device mode and
 layout before continuing. Do not guess other partition names. On first boot the
-rootfs grows to the existing `linux` partition size.
+ext4 or Btrfs filesystem grows to the existing `linux` partition size.
+
 
 At the Noctalia greeter, both the default username and initial password are **`nabu`**.
 For ext4, run `passwd` after login; the impermanent profile uses
@@ -261,8 +243,8 @@ Keep a checkout on the tablet. To start a personal configuration from this relea
 git clone https://github.com/hybrid-orbital/nixos-for-nabu.git
 cd nixos-for-nabu
 # Pick any branch name; the starting point can be a release tag
-# (v0.1.0-alpha, later releases, ...) or another branch such as main
-git switch -c my-nabu v0.1.0-alpha
+# (v2026.09.12.1.1, later releases, ...) or another branch such as main
+git switch -c my-nabu v2026.09.12.1.1
 ```
 
 After editing, use `git add` for new files so the Git flake can read them.
@@ -308,13 +290,15 @@ covers migration and first boot.
 
 ## Build
 
-The repository's `nixos/configuration.nix` already adds
-`https://nix-nabu.cachix.org` to `nix.settings.extra-substituters` (together with
-the matching `extra-trusted-public-keys`). That cache prebuilds
-`nixosConfigurations.nabu.config.system.build.kernel` among other outputs, so a
-plain `nixos-rebuild` on the tablet usually does not recompile the kernel. To
-build on another Nix machine (including a cross-build host), add both settings
-there:
+### Binary cache
+
+The repository's `nixos/configuration.nix` includes the Cachix binary cache
+`https://nix-nabu.cachix.org`. GitHub Actions builds and caches
+`nixosConfigurations.nabu.config.system.build.kernel`, so an on-device
+`nixos-rebuild` usually does not need to recompile the kernel.
+
+To build on another Nix machine (including a cross-build host), consider adding
+these settings to its configuration:
 
 ```nix
 nix.settings.extra-substituters = [ "https://nix-nabu.cachix.org" ];
@@ -323,46 +307,61 @@ nix.settings.extra-trusted-public-keys = [
 ];
 ```
 
-On Linux with Nix and flakes enabled, create a checkout as shown above, then run:
+### Flake outputs
+
+On Linux with Nix and flakes enabled, check out the repository and run:
 
 ```sh
-# Keep both outputs on the same source, lock file and local configuration.
-nix build .#nabu-esp .#nabu-rootfs
+# Kernel (the second command always selects the native ARM64 configuration)
+nix build .#nabu-kernel
+nix build .#nixosConfigurations.nabu.config.system.build.kernel
 
-# Export matching images and SHA256SUMS to a fresh result-images directory.
-# This script has not been tested; manually copying the nix build outputs
-# to a location of your choice is recommended for now.
-bash scripts/build-image.sh
+# ext4 ESP files and image, and rootfs image
+nix build .#ext4-nabu-esp
+nix build .#nabu-esp       # Alias of ext4-nabu-esp
+nix build .#ext4-nabu-rootfs
+nix build .#nabu-rootfs    # Alias of ext4-nabu-rootfs
+
+# Btrfs + tmpfs root
+nix build .#impermanent-nabu-esp
+nix build .#impermanent-nabu-rootfs
+
+# System closures (native ARM64 configurations)
+nix build .#nixosConfigurations.impermanent-nabu.config.system.build.toplevel
+nix build .#nixosConfigurations.ext4-nabu.config.system.build.toplevel
 ```
 
-The sole current NixOS configuration, `nixosConfigurations.nabu`, includes niri
-and Noctalia. `nabu-esp`, `nabu-rootfs` and `nabu-kernel` have `x86_64-linux` and
-`aarch64-linux` outputs; the default output is the ESP. See the
-[build guide](docs/building.md) for details. The export script writes to a
-fresh `result-images/build-*` directory and refuses to overwrite existing artifacts.
-Build the ESP and rootfs together; do not mix revisions, configurations or native
-and cross-built outputs. Keep the checkout and lock unchanged during the build,
-and allow sufficient disk space, memory and network access or cached dependencies.
+Build the ESP and rootfs with the same source, `flake.lock`, configuration and
+build platform. Keep these inputs unchanged during the build.
 
-**Cross-build caveat:** x86_64 → aarch64 and native aarch64 builds have different
-`buildPlatform` values and dependency graphs, normally producing different
-derivations and store paths. Even after a cross-built image boots successfully,
-the first native rebuild may rebuild the kernel and many packages. Cross-built
-outputs are not a substitute for a native aarch64 binary cache. This follows from
-different build inputs, not merely changing machines; matching existing outputs
-and native caches can still be reused.
+**Cross compilation**
 
-The flake exposes cross-build entry points, but cross compilation is not
-guaranteed to succeed: different platforms may need different overrides of
-nixpkgs. When a native aarch64-linux builder or an existing cache is available,
-select the native ARM64 outputs with `nix build .#packages.aarch64-linux.<...>`,
-which picks the flake output's system instead of cross compiling.
+On `x86_64-linux`, `nix build .#nabu-kernel` and the shorthand image outputs above
+select x86_64 → aarch64 cross compilation. On `aarch64-linux`, they select native
+builds. Different `buildPlatform` values and build dependencies normally produce
+different derivations and store paths. The first native rebuild on the tablet
+may rebuild the kernel and many packages unless matching native outputs or caches
+are available.
 
-The flake currently produces an uncompressed rootfs; the zstd compression and
-splitting in releases are additional packaging steps. The old
-`scripts/qemu-smoke.sh` has not been adapted to the current non-UKI outputs and is
-not a test entry point for this release. See the [build guide](docs/building.md)
-for more troubleshooting and measurement notes.
+The cross-build entry points were a workaround when the project only had an
+`x86_64-linux` build machine. They are not guaranteed to keep working as nixpkgs
+changes and may need extra overrides. The current flake has no `aarch64-darwin`
+package outputs; on Apple Silicon, an `aarch64-linux` VM or remote Linux builder
+can build native outputs.
+
+Select native ARM64 package outputs explicitly with:
+
+```sh
+nix build .#packages.aarch64-linux.nabu-kernel
+```
+
+This selects the output platform but does not configure a builder. Building
+requires an `aarch64-linux` builder, or emulation enabled on a NixOS Linux host
+with `boot.binfmt.emulatedSystems = [ "aarch64-linux" ];`. If all outputs are
+already cached, no local compilation is needed.
+
+See the [build guide](docs/building.md) for details.
+
 
 ## Further reading
 
@@ -402,12 +401,18 @@ services and desktops:
 
 ### Kernel patch sources
 
-The changes in `pkgs/kernel/patches/` come from the authors and upstream commits
-below; this repository only backports and adapts them:
+The changes in `pkgs/kernel/patches/` include upstream backports and local
+adaptations. Verified sources are listed below:
 
-- **`0001-nabu-match-fedora-runtime-fixes.patch`**: downstream fixes from the
-  sm8150 mainline fork, by **Nicola Guerrera** (commits `53a8b558`, `01fc3dd3`,
-  `6963e380`).
+- **`0001-nabu-match-fedora-runtime-fixes.patch`**: a combined patch introduced by
+  repository commit [`f1a0391`](https://github.com/hybrid-orbital/nixos-for-nabu/commit/f1a039140353fad1d336751e42c95a530056e5ba).
+  Disabling Hall-sensor wake, correcting the touchscreen `getClient(void)` declarations,
+  and removing the uninitialized idtp9418 variable and log match **Nicola Guerrera**'s
+  upstream commits
+  [`53a8b558`](https://gitlab.com/sm8150-mainline/linux/-/commit/53a8b55839d1cd4be6dc25f11aeb93e8348cc270),
+  [`01fc3dd3`](https://gitlab.com/sm8150-mainline/linux/-/commit/01fc3dd3c8317362bcddd9eab9f243909621a4a0), and
+  [`6963e380`](https://gitlab.com/sm8150-mainline/linux/-/commit/6963e3800a8e8059c5f01b01dd8e2a5e6a28209a),
+
 - **`0001-drm-msm-dsi-Move-MI_DRM_BLANK_UNBLANK-notification-t.patch`**: by
   **TwinbornPlate75** `<3342733415@qq.com>`, commit `bc048e06`.
 - **`0002-nabu-ath10k-mac-address.patch`**: approach from
