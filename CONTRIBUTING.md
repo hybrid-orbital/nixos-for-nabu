@@ -2,7 +2,7 @@
 
 当前技术基线为 systemd-boot、外部 DTB、原生 NixOS generations 和 niri + Noctalia。
 欢迎改进构建易用性、镜像体积、其他桌面与存储方案、硬件支持、CI 和文档。
-具体方向见[路线图](docs/roadmap.md)。
+具体方向见[路线图](docs/zh_CN/roadmap.md)。
 
 ## 提交改动
 
@@ -23,7 +23,7 @@
 
 ## 报告设备问题
 
-按[设备状态文档](docs/device-status.md#如何提供有用的报告)记录固件、构建平台、
+按[设备状态文档](docs/zh_CN/device-status.md#如何提供有用的报告)记录固件、构建平台、
 重现步骤和日志。相机、低功耗休眠和偶发启动失败已列为已知问题（重启后随机 Wi-Fi MAC 地址问题已解决），
 新增证据可帮助缩小范围。
 
@@ -37,5 +37,5 @@
 4. 中英文 README、设备状态和相应操作指南。
 
 特别检查 ESP 刷入 `esp`，不是 `boot`。当前 alpha release 的旧说明存在这个笔误，
-纠正说明见[安装文档](docs/installation.md#刷写到现有分区)。
+纠正说明见[安装文档](docs/zh_CN/installation.md#刷写到现有分区)。
 未来 GitHub Actions 应自动化构建、校验和发布材料生成，但实机验证仍需独立记录。

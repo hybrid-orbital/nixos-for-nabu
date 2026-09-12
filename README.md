@@ -14,7 +14,22 @@ This fork builds on that foundation through validation, native Nixpkgs boot
 management and everyday desktop use. This project depends on the work and
 contributions of many other projects, credited below.
 
-Storage variants and persistence settings: [storage guide](docs/storage.md) (Chinese).
+## Storage variants
+
+Two storage profiles are available out of the box. Both reuse the existing GPT
+`esp` and `linux` partitions and do not repartition the device:
+
+- **`ext4-nabu` (default, host name `nabu`)**: a conventional ext4 root
+  filesystem, suitable for general and everyday use.
+- **`impermanent-nabu`**: the more aggressive tmpfs-root profile, aimed at Nix
+  users who want a stateless root with declarative persistence. `/` is tmpfs
+  (capped at 25% of RAM) while `/nix`, `/nix/persistent` and `/home` live in
+  subvolumes of the same Btrfs partition, so only the root directory is discarded
+  on reboot. The repository already provides a btrfs image target for it
+  (`nabu-rootfs.btrfs.img`), which still needs hardware validation.
+
+Directory layout, the persistence list, declarative passwords and migration are
+covered in the [storage guide](docs/storage.md).
 
 ## Current release
 
@@ -29,11 +44,17 @@ that every hardware feature is supported.
 | Area | Current limitation |
 | --- | --- |
 | Camera | Not working |
-| Low-power suspend | Not working; locking or blanking the display does not establish low-power operation |
+| Low-power suspend | s2idle is reachable and no longer wakes immediately (Bluetooth UART wake fixed and validated on hardware); power key, auto-suspend and standby power still pending |
 | Power key | Deliberately ignored pending usable screen-off and suspend/resume support |
 | Boot reliability | Boot sometimes fails; the cause is still under investigation |
-| Wi-Fi hangs after idle | After long idle, ath10k_snoc detects an unresponsive firmware/WMI, recovery fails repeatedly, and Wi-Fi stops working until the driver is reloaded (cause located, upstream fix backported, on-device validation pending) |
-| Image size | The rootfs is large; reducing the closure and splitting configurations are priorities |
+| Wi-Fi hangs after idle | After long idle, ath10k_snoc detects an unresponsive firmware/WMI, recovery fails repeatedly, and Wi-Fi stops working until the driver is reloaded (still under long-term observation) |
+
+Other hardware needs fuller test records; enabling a driver in the
+configuration is not evidence of hardware validation. When reporting a problem,
+include the image version, firmware version, reproduction steps and logs;
+distinguish cold boots from warm reboots.
+
+### Fixed or mitigated
 
 The random Wi-Fi MAC address across reboots is now resolved: the generic
 board-2.bin carries no MAC, so a kernel patch
@@ -42,26 +63,56 @@ locally-administered address from the SMBIOS board serial, overridable with the
 `ath10k_core.macaddr=` module parameter. The approach comes from
 [TwinbornPlate75/linux-nabu](https://github.com/TwinbornPlate75/linux-nabu).
 
-Other hardware needs fuller test records; enabling a driver in the
-configuration is not evidence of hardware validation. When reporting a problem,
-include the image version, firmware version, reproduction steps and logs;
-distinguish cold boots from warm reboots.
+**Suspend-to-idle waking immediately** — fixed, and entering suspend has been
+confirmed on hardware.
 
-Wi-Fi may hang after a long idle period: `ath10k_snoc` (WCN3990) detects an
-unresponsive firmware/WMI, attempts automatic recovery, and after repeated
-failures gives up (wedged state), leaving Wi-Fi unusable. The `WARN_ON` in
-`mac.c` is the symptom, not the root cause: the recovery bookkeeping in
-`ath10k` could mark the device `WEDGED` because of recoveries that never ran
-(the check ran synchronously on the QMI indication path and queued its work on
-the ordered workqueue, where later triggers were coalesced, so every trigger
-merely consumed a consecutive-failure credit), and `ath10k_start()` then fails
-permanently even though the interface was down. Upstream commit `f35a07a4842a`
-("wifi: ath10k: move recovery check logic into a new work") runs the check on
-its own workqueue and cancels it in `ath10k_stop()`; it is backported here as
-`pkgs/kernel/patches/0004-nabu-ath10k-recovery-check-workqueue.patch`. The
-firmware version is unrelated (firmware is loaded via TQFTP and is already
-HL 3.2.0). Until the backport has been validated on hardware, reload the
-driver manually to recover:
+- **Main cause**: the Bluetooth UART (`uart13` / `c8c000.serial`) port stays open
+  across system sleep, so the GENI serial runtime-suspend callback never runs, the
+  sleep pinctrl is never applied and the QUP13 pads stay in their `bias-disable`
+  default state; combined with the TLMM latching edges while the wake IRQ is
+  masked, that IRQ fires the moment it is armed.
+- **Fix**: backport upstream `d0cd9c8d0fd5` ("serial: qcom-geni: add force
+  suspend/resume to system sleep callbacks"), which forces the runtime suspend
+  from the system-sleep callbacks; patch:
+  `pkgs/kernel/patches/0005-qcom-geni-serial-force-suspend-system-sleep.patch`.
+- **Credit**: upstream author **Praveen Talari** (Qualcomm), merged via tty-next
+  for v6.18-rc4 and absent from 6.17.y.
+- **Caveats**: this is a backport onto the 6.17 branch. Bluetooth operation and the
+  wake capability are unchanged, but merging upstream later should confirm the fix
+  has been absorbed.
+
+<details><summary>Technical details</summary>
+
+The WCN3991 Bluetooth UART is a serdev whose port stays open, so the runtime PM
+usage count never reaches zero at suspend time (the PM core additionally pins a
+reference during prepare). `qcom_geni_serial_runtime_suspend()` therefore never
+runs and `geni_se_resources_off()` is skipped, which also skips the sleep pinctrl
+(`qup_uart13_sleep`: GPIO input with a `gpio46` pull-up). The controller's traffic
+produces falling edges, and pinctrl-msm latches edge-IRQ status while the IRQ is
+masked, so the dedicated wake IRQ fired as soon as `dpm_suspend_noirq` armed it and
+the system resumed immediately. The patch keeps the upstream author, commit message
+and sign-off chain, with only the diff context rebased.
+
+</details>
+
+**Wi-Fi hangs after a long idle period (`ath10k_snoc` / WCN3990)** — root cause
+identified, upstream fix backported, still under long-term observation.
+
+- **Main cause**: `ath10k` runs its recovery check synchronously on the QMI
+  indication path and queues the recovery work on the ordered workqueue, where
+  later triggers are coalesced. Recoveries therefore never actually run while
+  still consuming consecutive-failure credits, until the device is marked `WEDGED`
+  and `ath10k_start()` fails permanently (the `WARN_ON` in `mac.c` is the symptom,
+  not the root cause).
+- **Fix**: backport upstream `f35a07a4842a` ("wifi: ath10k: move recovery check
+  logic into a new work"), which moves the check to its own workqueue and cancels
+  it in `ath10k_stop()`; patch:
+  `pkgs/kernel/patches/0004-nabu-ath10k-recovery-check-workqueue.patch`.
+- **Credit**: upstream author **Kang Yang** (Qualcomm). The firmware version is
+  unrelated (firmware is loaded via TQFTP and is already HL 3.2.0).
+- **Caveats**: the backport has not seen a long enough observation period yet. If
+  Wi-Fi hangs again the driver must be re-probed (restarting NetworkManager alone
+  does not help); reload it manually to recover:
 
 ```sh
 # Option 1 (recommended): rebind the platform device, no extra tools needed
@@ -81,21 +132,51 @@ sudo systemctl start NetworkManager
 Restarting NetworkManager alone does not recover; the driver must be re-probed
 (unbind/bind or module reload).
 
-### Available and planned features
+<details><summary>Root-cause details</summary>
 
-| Available now | Planned work |
-| --- | --- |
-| Native systemd-boot generations and an Android entry | Smaller images and stronger release validation |
-| niri + Noctalia desktop and greeter | Separate TTY and KDE configurations |
-| Flashable ext4 images and an experimental tmpfs root + Btrfs variant | Hardware validation of persistence and recovery |
-| Native ARM64 and x86_64 cross-build entry points | Cross-build compatibility and cache usability |
-| Landscape boot menu, greeter, desktop and pen mapping | Screen-off, suspend/resume and remaining hardware support |
-| Local image export script | GitHub Actions build and release infrastructure |
+`ath10k` marks the device `WEDGED` because of recoveries that never actually run:
+the check executes synchronously on the QMI indication path
+(`ath10k_snoc_fw_indication()`), blocking for up to 5 seconds waiting for the
+previous recovery to finish, and then queues `restart_work` on the ordered
+workqueue, where later triggers are coalesced. Every trigger therefore only
+consumes a consecutive-failure credit, after which `ath10k_start()` keeps failing
+even though the interface was down.
 
-Cross-build entry points do not guarantee every configuration will build.
-TTY and KDE variants are not available flake outputs yet. The experimental Btrfs
-variant needs hardware validation. See
-[device status](docs/device-status.md) and the [roadmap](docs/roadmap.md) (Chinese).
+</details>
+
+### Provided now and planned work
+
+**Provided now**
+
+- Native systemd-boot generations and an Android boot entry
+- niri + Noctalia desktop and greeter; landscape boot menu, greeter, desktop and pen mapping
+- ext4 images, plus an experimental tmpfs root + Btrfs variant
+- Native ARM64 and x86_64 cross-build entry points; local image export script
+
+**Planned work**
+
+- **Builds and caches:** improve cross-build entry points and diagnostics, track
+  compatibility, and explore native ARM64 builders and binary caches to reduce the
+  first on-device rebuild cost.
+- **System and image size:** measure dependencies, shrink the rootfs and split
+  common device modules from the TTY, niri and KDE configurations; validate the
+  Btrfs/Impermanence variant on hardware and document recovery.
+- **Device support:** investigate intermittent boot failures, work on cameras, and
+  implement usable power-key behaviour, screen-off and low-power suspend/resume
+  with measured standby power.
+- **CI and releases:** build GitHub Actions evaluation checks and image builds,
+  improve caching, checksums, split archives and release records, and report
+  automated builds and hardware validation separately.
+- **Documentation and contributions:** keep both READMEs, installation steps and
+  device status aligned; document reproducible usage and validation for new
+  variants, and translate the detailed guides.
+
+These are planned tasks. Targets are tracked in the
+[roadmap](docs/roadmap.md), and what is implemented and validated
+in [device status](docs/device-status.md). Separate TTY/KDE outputs
+and automated image CI are not available yet. Contributions with configuration
+details, logs and validation results are welcome; see the
+[contribution guide](CONTRIBUTING.md) (Chinese).
 
 ## Install a release image
 
@@ -134,23 +215,18 @@ fastboot flash esp esp.img
 fastboot reboot
 ```
 
-**Flash the ESP to `esp`, never `boot`. The early release instructions contain
-a typo, `fastboot flash boot esp.img`.** If these partitions cannot be queried or
-accessed, check the device mode and layout before continuing. Do not guess other
-partition names. On first boot, ext4 grows to the existing `linux` partition size;
-the partition table is not changed.
+If these partitions cannot be queried or accessed, check the device mode and
+layout before continuing. Do not guess other partition names. On first boot the
+rootfs grows to the existing `linux` partition size.
 
 At the Noctalia greeter, both the default username and initial password are **`nabu`**.
 For ext4, run `passwd` after login; the impermanent profile uses
-[declarative passwords](docs/storage.md#无状态版本的密码). **TTY autologin and SSH password authentication are also
+[declarative passwords](docs/storage.md#passwords-for-the-impermanent-profile). **TTY autologin and SSH password authentication are also
 enabled**; adjust the configuration for ongoing personal use. Changing the password
-does not disable TTY autologin. Use `systemctl --failed` to inspect failed services,
-`findmnt /boot/efi` to check the ESP mount, and `bootctl list` to inspect boot entries.
+does not disable TTY autologin.
 
-To preserve data from an existing NixOS installation, avoid flashing the rootfs.
-Back up first, then deploy and verify the new boot entry with an on-device
-`nixos-rebuild boot`. The [installation guide](docs/installation.md) (Chinese)
-provides migration details.
+Use `systemctl --failed` to inspect failed services,
+`findmnt /boot/efi` to check the ESP mount, and `bootctl list` to inspect boot entries.
 
 ## Boot and generations
 
@@ -175,7 +251,7 @@ The project's `system.build.esp-image` code still assembles the initial ESP with
 Subsequent rebuilds use the nixpkgs systemd-boot installer to deploy and manage
 generations. Initial image files and old UKI/rEFInd files may not be cleaned up
 automatically; check retained entries before deleting them. See
-[architecture](docs/architecture.md) (Chinese) for implementation details.
+[architecture](docs/architecture.md) for implementation details.
 
 ## On-device updates and rollback
 
@@ -184,21 +260,28 @@ Keep a checkout on the tablet. To start a personal configuration from this relea
 ```sh
 git clone https://github.com/hybrid-orbital/nixos-for-nabu.git
 cd nixos-for-nabu
+# Pick any branch name; the starting point can be a release tag
+# (v0.1.0-alpha, later releases, ...) or another branch such as main
 git switch -c my-nabu v0.1.0-alpha
 ```
 
-After editing, use `git add` for new files so the Git flake can read them; a commit
-is not required. Update from the checkout:
+After editing, use `git add` for new files so the Git flake can read them.
+Update from the checkout:
 
 ```sh
+# Routine update: without a #name the configuration is chosen by host name
+# (the ext4 variant's host name is nabu)
+sudo nixos-rebuild switch --flake .
+
+# Variants can also be selected explicitly: nabu for ext4, impermanent-nabu
+# for the stateless root variant
 sudo nixos-rebuild switch --flake .#nabu
+sudo nixos-rebuild switch --flake .#impermanent-nabu
 ```
 
 `switch` updates boot entries and activates the configuration. Kernel, initrd and
 boot-parameter changes require a reboot. Use `sudo nixos-rebuild boot --flake .#nabu`
-to prepare only the next boot. `flake.lock` pins dependencies; ordinary rebuilds
-do not upgrade them. Run `nix flake update` when you intend to update inputs,
-then build and validate.
+to prepare only the next boot.
 
 If the system is still running, roll back to the previous generation with:
 
@@ -216,9 +299,29 @@ Sharing boot files saves space, but distinct kernels and initrds still consume E
 capacity. Set `boot.loader.systemd-boot.configurationLimit = 10;` in your configuration
 to limit menu generations; this does not delete historical systems from the Nix store.
 Keep a tested bootable generation before cleanup. See
-[updates and rollback](docs/usage-on-device.md) (Chinese) for details.
+[updates and rollback](docs/usage-on-device.md) for details.
+
+To migrate while preserving data from an existing installation, do not flash the
+rootfs: back up first, then deploy and verify the new boot entry with an on-device
+`nixos-rebuild boot`. The [installation guide](docs/installation.md)
+covers migration and first boot.
 
 ## Build
+
+The repository's `nixos/configuration.nix` already adds
+`https://nix-nabu.cachix.org` to `nix.settings.extra-substituters` (together with
+the matching `extra-trusted-public-keys`). That cache prebuilds
+`nixosConfigurations.nabu.config.system.build.kernel` among other outputs, so a
+plain `nixos-rebuild` on the tablet usually does not recompile the kernel. To
+build on another Nix machine (including a cross-build host), add both settings
+there:
+
+```nix
+nix.settings.extra-substituters = [ "https://nix-nabu.cachix.org" ];
+nix.settings.extra-trusted-public-keys = [
+  "nix-nabu.cachix.org-1:6oBp/ANDnp5za8MMMfz6EpkJbN1jaRlRpPIoKL4tCGM="
+];
+```
 
 On Linux with Nix and flakes enabled, create a checkout as shown above, then run:
 
@@ -235,7 +338,7 @@ bash scripts/build-image.sh
 The sole current NixOS configuration, `nixosConfigurations.nabu`, includes niri
 and Noctalia. `nabu-esp`, `nabu-rootfs` and `nabu-kernel` have `x86_64-linux` and
 `aarch64-linux` outputs; the default output is the ESP. See the
-[build guide](docs/building.md) (Chinese) for details. The export script writes to a
+[build guide](docs/building.md) for details. The export script writes to a
 fresh `result-images/build-*` directory and refuses to overwrite existing artifacts.
 Build the ESP and rootfs together; do not mix revisions, configurations or native
 and cross-built outputs. Keep the checkout and lock unchanged during the build,
@@ -247,40 +350,24 @@ derivations and store paths. Even after a cross-built image boots successfully,
 the first native rebuild may rebuild the kernel and many packages. Cross-built
 outputs are not a substitute for a native aarch64 binary cache. This follows from
 different build inputs, not merely changing machines; matching existing outputs
-and native caches can still be reused. Cross compilation may fail due to package
-or toolchain compatibility. Successful evaluation is not proof of a successful
-build or hardware boot. `--system aarch64-linux` selects native ARM64 outputs;
-it does not configure cross compilation. Those outputs require an ARM64 builder,
-matching cache or configured emulation.
+and native caches can still be reused.
 
-The flake currently produces an uncompressed rootfs. Release zstd compression and
-splitting are additional packaging steps. Compression reduces download size, not
-the installed system closure. The old `scripts/qemu-smoke.sh` has not been adapted
-to the current non-UKI outputs and is not a test entry point for this release.
+The flake exposes cross-build entry points, but cross compilation is not
+guaranteed to succeed: different platforms may need different overrides of
+nixpkgs. When a native aarch64-linux builder or an existing cache is available,
+select the native ARM64 outputs with `nix build .#packages.aarch64-linux.<...>`,
+which picks the flake output's system instead of cross compiling.
 
-## Next steps
-
-- **Builds and caches:** improve cross-build commands and diagnostics, track compatibility,
-  and explore native ARM64 builders and binary caches to reduce the first on-device rebuild cost.
-- **System and image size:** measure large dependencies, shrink the rootfs and separate common
-  device modules from TTY, niri and KDE configurations. Validate the new Btrfs/Impermanence
-  variant on hardware and document recovery procedures.
-- **Device support:** investigate intermittent boot failures and Wi-Fi MAC changes across
-  reboots, work on cameras and kernel options, and implement usable power-key behavior,
-  screen-off and low-power suspend/resume with measured standby power consumption.
-- **CI and releases:** build GitHub Actions evaluation checks and image builds, improve caching,
-  checksums, split archives and release records, and report hardware validation separately.
-- **Documentation and contributions:** keep both READMEs, installation steps and device status
-  aligned; document reproducible usage and validation for new variants, and translate detailed guides.
-
-These are planned tasks. Separate TTY/KDE outputs and automated image CI are
-not available yet. Contributions with configuration details, logs and validation
-results are welcome. The [roadmap](docs/roadmap.md) and
-[contribution guide](CONTRIBUTING.md) (Chinese) provide more detail.
+The flake currently produces an uncompressed rootfs; the zstd compression and
+splitting in releases are additional packaging steps. The old
+`scripts/qemu-smoke.sh` has not been adapted to the current non-UKI outputs and is
+not a test entry point for this release. See the [build guide](docs/building.md)
+for more troubleshooting and measurement notes.
 
 ## Further reading
 
-Detailed guides currently use Chinese:
+The detailed guides are available in English under `docs/` and in Chinese under
+`docs/zh_CN/`. Archived material is in `docs/legacy/`.
 
 - [Installation and first boot](docs/installation.md)
 - [Builds, cross compilation and caches](docs/building.md)
@@ -313,7 +400,28 @@ services and desktops:
 - [niri](https://github.com/niri-wm/niri) and [Noctalia](https://github.com/noctalia-dev/noctalia-shell) for the current desktop and shell.
 - map220v, timoxa0, nik012003, panpantepan, and the community contributors who continue to adapt and test Linux on nabu.
 
-Further background is in [project history](docs/history.md) (Chinese).
+### Kernel patch sources
+
+The changes in `pkgs/kernel/patches/` come from the authors and upstream commits
+below; this repository only backports and adapts them:
+
+- **`0001-nabu-match-fedora-runtime-fixes.patch`**: downstream fixes from the
+  sm8150 mainline fork, by **Nicola Guerrera** (commits `53a8b558`, `01fc3dd3`,
+  `6963e380`).
+- **`0001-drm-msm-dsi-Move-MI_DRM_BLANK_UNBLANK-notification-t.patch`**: by
+  **TwinbornPlate75** `<3342733415@qq.com>`, commit `bc048e06`.
+- **`0002-nabu-ath10k-mac-address.patch`**: approach from
+  [TwinbornPlate75/linux-nabu](https://github.com/TwinbornPlate75/linux-nabu).
+- **`0003-nabu-adreno-do-not-abort-system-suspend.patch`**: approach adapted from
+  the iris VPU5 suspend fix in `CFM880/nabu-iris` (`42085a8`).
+- **`0004-nabu-ath10k-recovery-check-workqueue.patch`**: upstream `f35a07a4842a`
+  ("wifi: ath10k: move recovery check logic into a new work") by **Kang Yang**
+  (Qualcomm).
+- **`0005-qcom-geni-serial-force-suspend-system-sleep.patch`**: upstream
+  `d0cd9c8d0fd5` ("serial: qcom-geni: add force suspend/resume to system sleep
+  callbacks") by **Praveen Talari** (Qualcomm).
+
+Further background is in [project history](docs/history.md).
 
 ## License
 

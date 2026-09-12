@@ -1,119 +1,151 @@
-# 构建、交叉编译与缓存
+**English** | [简体中文](zh_CN/building.md)
 
-[返回项目首页](../README_zh_CN.md)
+# Building, cross compilation and caches
 
-构建入口以当前 [`flake.nix`](../flake.nix) 为准。复现发布镜像应检出对应 tag，
-保留 `flake.lock`，并记录本地配置修改；不要在构建配套镜像之间更新输入。
+[Back to project home](../README.md)
 
-## 当前输出
+The build entry points are defined by the current [`flake.nix`](../flake.nix). To
+reproduce a release image, check out the matching tag, keep `flake.lock` and record
+local configuration changes; do not update inputs in the middle of building a
+matching pair of images.
 
-| 输出 | 内容 |
+## Current outputs
+
+| Output | Contents |
 | --- | --- |
-| `nixosConfigurations.nabu` / `ext4-nabu` | ARM64 原生 ext4 配置，包含 niri + Noctalia |
-| `nixosConfigurations.impermanent-nabu` | tmpfs root + Btrfs 持久化配置 |
-| `packages.<system>.ext4-nabu-{esp,rootfs}` | ext4 配置的配套镜像 |
-| `packages.<system>.impermanent-nabu-{esp,rootfs}` | 无状态配置的配套 ESP 和 Btrfs 镜像 |
-| `packages.<system>.nabu-esp` | `esp.img` 和 `efi-files.zip` |
-| `packages.<system>.nabu-rootfs` | 默认不压缩的 `nabu-rootfs.ext4.img` |
-| `packages.<system>.nabu-kernel` | sm8150 内核 |
+| `nixosConfigurations.nabu` / `ext4-nabu` | native ARM64 ext4 configuration with niri + Noctalia |
+| `nixosConfigurations.impermanent-nabu` | tmpfs root + Btrfs persistence configuration |
+| `packages.<system>.ext4-nabu-{esp,rootfs}` | matching images for the ext4 configuration |
+| `packages.<system>.impermanent-nabu-{esp,rootfs}` | matching ESP and Btrfs images for the impermanent configuration |
+| `packages.<system>.nabu-esp` | `esp.img` and `efi-files.zip` |
+| `packages.<system>.nabu-rootfs` | `nabu-rootfs.ext4.img`, uncompressed by default |
+| `packages.<system>.nabu-kernel` | the sm8150 kernel |
 | `packages.<system>.default` | `nabu-esp` |
 
-`<system>` 支持 `x86_64-linux` 和 `aarch64-linux`。当前没有 `nabu-uki`、
-`nabu-kde`、`nabu-tty` 等输出，后两者属于路线图。
+`<system>` supports `x86_64-linux` and `aarch64-linux`. There are no `nabu-uki`,
+`nabu-kde` or `nabu-tty` outputs; the latter two are roadmap items.
 
-ext4 系统的主机名是 `nabu`（`ext4-nabu` 的别名），impermanent 系统是
-`impermanent-nabu`；两者都是 flake 的键或别名，因此 `sudo nixos-rebuild switch
---flake .` 会按已安装的存储方案自动选中对应配置，无需手写 `#hostname`。
+The ext4 system's host name is `nabu` (an alias of `ext4-nabu`) and the impermanent
+one is `impermanent-nabu`; both are flake keys or aliases, so
+`sudo nixos-rebuild switch --flake .` automatically selects the configuration of
+the installed storage profile without writing `#hostname` by hand.
 
-## 构建配套镜像
+## Building a matching image pair
 
-需要 Linux、支持 flakes 的 Nix、网络或完整的本地依赖缓存，以及足够的磁盘和内存。
-桌面和内核构建的资源需求会随配置变化；不要把历史最小系统的磁盘估算当作当前上限。
+You need Linux, Nix with flakes enabled, network access or a complete local
+dependency cache, and enough disk space and memory. The resource requirements of
+the desktop and kernel builds change with the configuration; do not treat disk
+estimates from the historical minimal system as the current upper bound.
 
 ```sh
 git clone https://github.com/hybrid-orbital/nixos-for-nabu.git
 cd nixos-for-nabu
-# 复现当前 alpha；开发新配置时使用自己的分支
+# Reproduce the current alpha; use your own branch when developing new configuration
 git checkout v0.1.0-alpha
 nix build .#nabu-esp .#nabu-rootfs
 ```
 
-更方便的导出入口：
+A more convenient export entry point:
 
 ```sh
 bash scripts/build-image.sh
-# 或只导出一种镜像
+# or export only one kind of image
 bash scripts/build-image.sh esp
 bash scripts/build-image.sh rootfs
-# 无状态配置的配套镜像
+# matching images for the impermanent configuration
 bash scripts/build-image.sh all impermanent
 ```
 
-脚本在新的 `result-images/build-*` 目录保存镜像与 `SHA256SUMS`，也可通过 `OUT_DIR`
-指定新目录。它拒绝覆盖同名产物。脚本按顺序构建两个输出，期间应保持工作树不变。
-这是本地构建流程；目前没有已经落地的 GitHub Actions 镜像流水线。
+The script stores images and `SHA256SUMS` in a new `result-images/build-*`
+directory, and `OUT_DIR` can point it at another new directory. It refuses to
+overwrite existing artifacts. It builds the two outputs in sequence, so keep the
+working tree unchanged while it runs. This is a local build flow; there is no
+GitHub Actions image pipeline in place yet.
 
-存储布局、自定义持久化目录和无状态版本的使用说明见[存储方案](storage.md)。
+See the [storage profile](storage.md) guide for the storage layout, custom
+persistent directories and how to use the impermanent variant.
 
-## 原生构建与交叉构建
+## Native and cross builds
 
-Nix 的平台命名与日常“宿主机/目标机”的说法容易混淆：
+Nix's platform naming is easy to confuse with the everyday "host/target" wording:
 
-| 模式 | `buildPlatform`（运行构建工具） | `hostPlatform`（运行产物） |
+| Mode | `buildPlatform` (runs the build tools) | `hostPlatform` (runs the result) |
 | --- | --- | --- |
-| 平板或 ARM64 Linux 构建机原生构建 | aarch64-linux | aarch64-linux |
-| x86_64 Linux 交叉构建 | x86_64-linux | aarch64-linux |
+| Native build on the tablet or an ARM64 Linux builder | aarch64-linux | aarch64-linux |
+| Cross build from x86_64 Linux | x86_64-linux | aarch64-linux |
 
-当前 flake 的 x86_64 输出会设置交叉构建平台；它的设计不要求通过 QEMU 运行 ARM64
-构建工具。`--system aarch64-linux` 只是选择 ARM64 输出，不会自动配置交叉工具链或
-ARM64 构建机。要用原生 ARM64 输出，需要原生机器、已配置的远程 ARM64 builder，
-或另外配置的模拟执行环境。
+The current flake's x86_64 outputs set the cross-build platform; by design they do
+not require running ARM64 build tools under QEMU. `--system aarch64-linux` only
+selects the ARM64 outputs and does not configure a cross toolchain or an ARM64
+builder. To use the native ARM64 outputs you need a native machine, a configured
+remote ARM64 builder, or a separately configured emulation environment.
 
-**交叉编译是可尝试的构建路径，不是所有软件包都能通过的保证。** 软件包可能在构建时
-运行目标程序，依赖未适配的工具链，或在更新 nixpkgs 后出现交叉专有问题。
-`nix flake check --no-build --all-systems` 通过只证明相应检查的求值成功，
-不代表镜像能构建、更不代表能在平板启动。
+**Cross compilation is a build path worth trying, not a guarantee that every
+package works.** Packages may run target programs at build time, depend on
+toolchains that have not been adapted, or hit cross-specific problems after a
+nixpkgs update. A passing `nix flake check --no-build --all-systems` only proves
+that the respective checks evaluate; it does not mean the images can be built, let
+alone that they boot on the tablet.
 
-## 为什么刷入交叉镜像后还要编译
+## Why a cross-built image is still rebuilt
 
-即使目标都是 ARM64，交叉和原生构建的 `buildPlatform`、编译器及依赖图不同，
-通常对应不同的 derivation 和 `/nix/store` 路径。差异来自构建输入，不是换了一台机器
-或主机名就必然改变 hash；相同平台和相同输入的另一台原生 builder 仍可共享结果。
+Even though both cases target ARM64, cross and native builds have different
+`buildPlatform` values, compilers and dependency graphs, which normally correspond
+to different derivations and `/nix/store` paths. The difference comes from the
+build inputs, not from changing machine or host name by itself; another native
+builder with the same platform and inputs can still share the results.
 
-交叉构建镜像可以正常运行。但在平板上用 `nixosConfigurations.nabu` 原生 rebuild 时，
-Nix 需要的是原生求值所得闭包，可能重新构建内核和大量包。已有交叉闭包不会自动被当成
-原生闭包使用。这也可能增加首次 rebuild 的时间和磁盘占用。
+A cross-built image runs normally. But when you run a native rebuild with
+`nixosConfigurations.nabu` on the tablet, Nix needs the closure from the native
+evaluation and may rebuild the kernel and a large number of packages. Existing
+cross closures are not automatically treated as native closures. That can also
+increase the time and disk usage of the first rebuild.
 
-并非所有包都一定重编：原生二进制缓存命中或已有匹配产物时会复用。交叉缓存只帮助
-匹配的交叉 derivation；在 PC 上预热交叉镜像不能承诺加速平板的原生 rebuild。
-长期维护可考虑 ARM64 原生构建机及对应缓存，相关设施仍待建设。
+Not every package is necessarily rebuilt: native binary cache hits or matching
+existing outputs are reused. A cross cache only helps matching cross derivations;
+warming a cross image on a PC does not promise to speed up the tablet's native
+rebuild. For long-term maintenance, an ARM64 native builder and a matching cache
+are worth considering, but that infrastructure is still to be built.
 
-参见 [Nix 官方交叉编译教程](https://nix.dev/tutorials/cross-compilation.html)
-和 [Nixpkgs 跨平台参数](https://nixos.org/manual/nixpkgs/unstable/#ssec-cross-platform-parameters)。
+See the
+[official Nix cross-compilation tutorial](https://nix.dev/tutorials/cross-compilation.html)
+and the
+[Nixpkgs cross-platform parameters](https://nixos.org/manual/nixpkgs/unstable/#ssec-cross-platform-parameters).
 
-## 镜像体积与压缩
+## Image size and compression
 
-ext4 镜像按系统闭包大小加 `nabu.image.rootFsExtraSize` 余量分配空间，默认余量为 512 MiB。
-Btrfs 则先压缩预装闭包并缩小文件系统，再附加同样的余量，详见[存储说明](storage.md)。
-当前配置设置 `nabu.image.compress = false`，便于直接刷写。release 的 zstd 压缩和分卷
-是发布包装，与 flake 默认输出不同。
+The ext4 image is sized as the system closure plus the
+`nabu.image.rootFsExtraSize` headroom, 512 MiB by default. Btrfs first compresses
+the pre-installed closure and shrinks the filesystem, then appends the same
+headroom; see the [storage profile](storage.md) guide for details. The current
+configuration sets `nabu.image.compress = false` so the image can be flashed
+directly. The zstd compression and splitting in releases is release packaging and
+differs from the flake's default outputs.
 
-外层 zstd 打包只降低下载体积；Btrfs 内部压缩也会减少预装文件在设备上的占用。
-缩减 rootfs 应先测量大依赖、固件、桌面组件和构建工具的闭包，再决定如何拆分变体。
-构建机上可先查看默认原生配置闭包（x86_64 上运行此命令不会自动改为交叉配置）：
+The outer zstd packaging only reduces the download size; the compression inside
+Btrfs also reduces how much the pre-installed files occupy on the device. To shrink
+the rootfs, first measure the closure of large dependencies, firmware, desktop
+components and build tools, then decide how to split variants. On a build machine
+you can inspect the default native configuration's closure first (running this
+command on x86_64 does not silently switch to a cross configuration):
 
 ```sh
 nix build .#nixosConfigurations.nabu.config.system.build.toplevel --out-link result-system
 nix path-info -Sh ./result-system
 ```
 
-这一步需要可用的 ARM64 构建能力或匹配缓存；不要为了测量体积在不合适的机器上盲目
-触发完整构建。已有运行系统可用 `nix path-info -Sh /run/current-system` 记录闭包大小。
-体积优化和各变体的目标见[路线图](roadmap.md)。
+This step needs working ARM64 build capability or a matching cache; do not trigger
+a full build blindly on an unsuitable machine just to measure size. On a running
+system, `nix path-info -Sh /run/current-system` records the closure size. Size
+optimisation and the goals of each variant are tracked in the
+[roadmap](roadmap.md).
 
-## 故障报告
+## Reporting failures
 
-记录提交、lock 文件、构建平台、完整命令、失败 derivation 和构建日志；区分求值失败、
-构建失败、镜像生成失败和真机启动失败。不要把某个平台的一次成功推广到所有变体。
-当前旧 `scripts/qemu-smoke.sh` 仍需要 UKI，**不适用于本版本产物**；它的更新是待办，
-本指南不将其列为当前镜像的验证手段。
+Record the commit, the lock file, the build platform, the exact command, the
+failing derivation and the build log; distinguish evaluation failures, build
+failures, image-generation failures and on-device boot failures. Do not generalise
+one success on one platform to every variant. The old `scripts/qemu-smoke.sh`
+still requires a UKI and **does not apply to this release's artifacts**; updating
+it is a pending task, and this guide does not list it as a validation method for
+the current images.

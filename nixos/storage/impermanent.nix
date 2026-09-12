@@ -36,7 +36,7 @@ in
   boot.initrd.supportedFilesystems = [ "btrfs" ];
 
   # Recreate accounts declaratively on the tmpfs root. For a private password,
-  # configure hashedPasswordFile on persistent storage (see docs/storage.md).
+  # configure hashedPasswordFile on persistent storage (see docs/zh_CN/storage.md).
   users.mutableUsers = false;
   users.users.nabu = {
     initialPassword = null;

@@ -177,7 +177,12 @@ let
         # immediately and the system resumes from suspend-to-idle right away.
         #
         # Backport of upstream d0cd9c8d0fd5 ("serial: qcom-geni: add force
-        # suspend/resume to system sleep callbacks"), in tty-next but not 6.17.y.
+        # suspend/resume to system sleep callbacks") by Praveen Talari
+        # <praveen.talari@oss.qualcomm.com>, merged via tty-next for v6.18-rc4
+        # and not present in 6.17.y:
+        #   https://git.kernel.org/torvalds/c/d0cd9c8d0fd5
+        # The patch file keeps the upstream author, message and sign-off chain
+        # and adds a backport note; the change itself is applied unmodified.
         # The BT controller, the wake IRQ and the wake capability all remain
         # functional; only the GENI SE power/pin state during system sleep changes.
         name = "qcom-geni-serial-force-suspend-system-sleep";

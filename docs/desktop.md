@@ -1,117 +1,149 @@
-# niri + Noctalia 桌面
+**English** | [简体中文](zh_CN/desktop.md)
 
-[返回项目首页](../README_zh_CN.md) · [设备状态](device-status.md)
+# niri + Noctalia desktop
 
-这是当前发布镜像的默认桌面。相机不可用、低功耗休眠未解决，且仍有偶发启动失败；
-电源键被刻意忽略，锁屏不代表熄屏或低功耗休眠。其他桌面变体仍在[路线图](roadmap.md)中。
+[Back to project home](../README.md) · [Device status](device-status.md)
 
-`nixos/niri.kdl` 管理布局、输入设备、窗口规则和快捷键；
-`nixos/niri.nix` 管理 NixOS 软件包、服务、登录界面及 KDL 构建校验。
-当前配置对应 flake.lock 中的 niri 26.04 和 Noctalia 5.0.1。
+This is the default desktop of the current release image. The camera is
+unavailable and occasional boot failures remain; low-power suspend can reach s2idle
+again (the Bluetooth UART immediate-wake bug is fixed and validated on hardware).
+The power key is deliberately ignored, and locking the screen does not mean
+screen-off or low-power suspend. Other desktop variants are still on the
+[roadmap](roadmap.md).
 
-## 常用快捷键
+`nixos/niri.kdl` manages layout, input devices, window rules and key bindings;
+`nixos/niri.nix` manages NixOS packages, services, the greeter and the KDL build
+check. The current configuration corresponds to niri 26.04 and Noctalia 5.0.1 in
+`flake.lock`.
 
-正常登录桌面后，`Mod` 是键盘上的 Super / Windows 键。
-首次进入桌面会显示快捷键帮助，也可随时按 `Mod+Shift+/` 再次打开。
+## Common shortcuts
 
-| 快捷键 | 功能 |
+Once the desktop is running, `Mod` is the Super / Windows key on the keyboard.
+A shortcut help overlay appears on first login and can be reopened at any time with
+`Mod+Shift+/`.
+
+| Shortcut | Action |
 | --- | --- |
-| `Mod+Shift+/` | 显示快捷键帮助 |
-| `Mod+Return` / `Mod+E` | Foot 终端 / Thunar 文件管理器 |
-| `Mod+Space` / `Mod+S` / `Mod+,` | Noctalia 启动器 / 控制中心 / 设置 |
-| `Alt+Tab` | Noctalia 窗口切换面板 |
-| `Mod+Shift+K` | 显示或关闭 wvkbd 虚拟键盘 |
-| `Super+Alt+L` | Noctalia 锁屏 |
-| `Mod+←↓↑→` 或 `Mod+H/J/K/L` | 左右切换列、上下切换列内窗口 |
-| 上述方向键加 `Ctrl` | 移动列或列内窗口 |
-| `Mod+Home/End` | 聚焦最左 / 最右列；加 `Ctrl` 移动当前列 |
-| `Mod+Shift+方向键` | 切换显示器；加 `Ctrl` 将列移到该显示器 |
-| `Mod+PageUp/PageDown` 或 `Mod+I/U` | 切换上 / 下工作区 |
-| 上述工作区键加 `Ctrl` / `Shift` | 移动当前列到工作区 / 调整工作区顺序 |
-| `Mod+1…9` | 按序号切换动态工作区；加 `Ctrl` 移动当前列 |
-| `Mod+Tab` | 返回上次使用的工作区 |
-| `Mod+[` / `Mod+]` | 将窗口并入左 / 右列，或从列中拆出 |
-| `Mod+Ctrl+,` / `Mod+.` | 从右侧吸入窗口 / 将底部窗口拆出 |
-| `Mod+R` / `Mod+Shift+R` | 正向 / 反向循环列宽预设：1/3、1/2、2/3 |
-| `Mod+-` / `Mod+=` | 列宽减少 / 增加 10% |
-| `Mod+Shift+-` / `Mod+Shift+=` | 窗口高度减少 / 增加 10% |
-| `Mod+Ctrl+Shift+R` / `Mod+Ctrl+R` | 循环高度预设 / 恢复自动高度 |
-| `Mod+C` / `Mod+Ctrl+C` | 居中当前列 / 居中所有完整可见列 |
-| `Mod+F` / `Mod+Shift+F` | 最大化列宽 / 窗口全屏 |
-| `Mod+M` / `Mod+Ctrl+F` | 窗口最大化到屏幕边缘 / 列扩展到剩余可用宽度 |
-| `Mod+V` / `Mod+Shift+V` | 切换浮动 / 在浮动与平铺间切换焦点 |
-| `Mod+W` / `Mod+O` | 列内标签模式 / 工作区总览 |
-| `Print` 或 `Mod+Shift+S` | 交互式截图 |
-| `Ctrl+Print` / `Alt+Print` | 截取当前屏幕 / 当前窗口 |
-| `Mod+Escape` | 切换应用快捷键抑制，便于退出虚拟机等应用的键盘捕获 |
-| `Mod+Q` / `Mod+Shift+Q` | 关闭窗口 / 显示退出会话确认 |
+| `Mod+Shift+/` | Show shortcut help |
+| `Mod+Return` / `Mod+E` | Foot terminal / Thunar file manager |
+| `Mod+Space` / `Mod+S` / `Mod+,` | Noctalia launcher / control centre / settings |
+| `Alt+Tab` | Noctalia window switcher panel |
+| `Mod+Shift+K` | Show or hide the wvkbd virtual keyboard |
+| `Super+Alt+L` | Noctalia lock screen |
+| `Mod+←↓↑→` or `Mod+H/J/K/L` | Switch columns left/right, switch windows within a column up/down |
+| The direction keys above with `Ctrl` | Move columns or windows within a column |
+| `Mod+Home/End` | Focus the leftmost / rightmost column; with `Ctrl`, move the current column |
+| `Mod+Shift+<direction>` | Switch monitors; with `Ctrl`, move the column to that monitor |
+| `Mod+PageUp/PageDown` or `Mod+I/U` | Switch to the previous / next workspace |
+| The workspace keys above with `Ctrl` / `Shift` | Move the current column to a workspace / reorder workspaces |
+| `Mod+1…9` | Switch to a dynamic workspace by index; with `Ctrl`, move the current column |
+| `Mod+Tab` | Return to the previously used workspace |
+| `Mod+[` / `Mod+]` | Consume a window into the left / right column, or expel it from the column |
+| `Mod+Ctrl+,` / `Mod+.` | Consume from the right / expel the bottom window |
+| `Mod+R` / `Mod+Shift+R` | Cycle column-width presets forwards / backwards: 1/3, 1/2, 2/3 |
+| `Mod+-` / `Mod+=` | Decrease / increase the column width by 10% |
+| `Mod+Shift+-` / `Mod+Shift+=` | Decrease / increase the window height by 10% |
+| `Mod+Ctrl+Shift+R` / `Mod+Ctrl+R` | Cycle height presets / restore automatic height |
+| `Mod+C` / `Mod+Ctrl+C` | Centre the current column / centre all fully visible columns |
+| `Mod+F` / `Mod+Shift+F` | Maximise the column width / fullscreen the window |
+| `Mod+M` / `Mod+Ctrl+F` | Maximise the window to the screen edge / expand the column to the remaining width |
+| `Mod+V` / `Mod+Shift+V` | Toggle floating / switch focus between floating and tiled |
+| `Mod+W` / `Mod+O` | Tabbed column mode / workspace overview |
+| `Print` or `Mod+Shift+S` | Interactive screenshot |
+| `Ctrl+Print` / `Alt+Print` | Screenshot of the current screen / current window |
+| `Mod+Escape` | Toggle application shortcut inhibition, to escape keyboard grabs such as VMs |
+| `Mod+Q` / `Mod+Shift+Q` | Close the window / show the session-exit confirmation |
 
-音量、麦克风静音、亮度和媒体键由 Noctalia 处理，锁屏时也可使用。
-截图保存到 `~/Pictures/Screenshots/`。`Alt+Tab` 面板打开后，可以用
-Tab / Shift+Tab 或方向键选择，再按 Enter 确认、Escape 取消，也可以点击窗口。
+Volume, microphone mute, brightness and media keys are handled by Noctalia and also
+work on the lock screen. Screenshots are saved to `~/Pictures/Screenshots/`. Once
+the `Alt+Tab` panel is open, use Tab / Shift+Tab or the direction keys to select,
+Enter to confirm and Escape to cancel; windows can also be clicked.
 
-## 鼠标、触控板与平板
+## Mouse, touchpad and tablet
 
-- 按住 `Mod` 拖动鼠标左键移动窗口，右键调整窗口大小。
-- `Mod+滚轮上下` 切换工作区，加 `Ctrl` 将当前列移到该工作区。
-- `Mod+滚轮左右` 或 `Mod+Shift+滚轮上下` 切换列，加 `Ctrl` 移动列。
-- 触控板启用轻触点击、自然滚动和输入时禁用；niri 原生三指滑动导航，四指上滑打开总览。
-- 保留电源键不触发挂起/关机的设备规避设置。未添加自动挂起策略。
+- Hold `Mod` and drag the left mouse button to move a window; the right button
+  resizes it.
+- `Mod+scroll up/down` switches workspaces; with `Ctrl` it moves the current column
+  to that workspace.
+- `Mod+scroll left/right` or `Mod+Shift+scroll up/down` switches columns; with
+  `Ctrl` it moves the column.
+- The touchpad has tap-to-click, natural scrolling and disable-while-typing; niri
+  provides native three-finger swipe navigation, and a four-finger swipe up opens
+  the overview.
+- The device workaround that keeps the power key from suspending/powering off is
+  preserved. No automatic suspend policy has been added.
 
-默认新窗口占半屏；单列自动居中，切换到放不下的列时居中。
-Noctalia 设置窗口使用相对屏幕大小的浮动尺寸。内屏 `DSI-1` 默认旋转 270 度，
-与键盘横置方向一致；分辨率、刷新率和缩放仍自动选择。
-Noctalia 的概览背景层已接入 niri；具体背景效果在 Noctalia 设置中选择。
+New windows take half of the screen by default; a single column is centred
+automatically, and switching to a column that does not fit centres it.
+The Noctalia settings window uses a floating size relative to the screen. The
+internal `DSI-1` output is rotated 270 degrees by default, matching the landscape
+keyboard orientation; resolution, refresh rate and scale are still chosen
+automatically. Noctalia's overview background layer is integrated with niri; the
+actual background effect is chosen in the Noctalia settings.
 
-Thunar 配合 GVfs / UDisks 提供文件浏览、回收站和可移动设备访问。
-X11 应用通过 niri 自动启动的 xwayland-satellite 运行。
-NixOS 的 niri 模块提供 GTK 文件选择器、GNOME 屏幕共享 portal、密钥环和 XDG 自启动。
+Thunar with GVfs / UDisks provides file browsing, the trash and access to removable
+devices. X11 applications run through xwayland-satellite, which niri starts
+automatically. The NixOS niri module provides the GTK file chooser, the GNOME screen
+sharing portal, the keyring and XDG autostart.
 
-## 屏幕方向
+## Screen orientation
 
-各阶段分别设置方向，不能用一条内核参数控制整条启动流程：
+Each stage sets its orientation separately; a single kernel parameter cannot control
+the whole boot flow:
 
-| 阶段 | 配置 | 当前行为 |
+| Stage | Configuration | Current behaviour |
 | --- | --- | --- |
-| systemd-boot 菜单 | `EFI/systemd/drivers/GopRotate_aa64.efi` | 加载原 rEFInd 使用的旋转驱动，用户已验证菜单横屏 |
-| Linux 启动日志、TTY | `fbcon=rotate:1` | 顺时针 90 度横屏，保留已有设置 |
-| Noctalia 登录界面 | `settings.output.transforms = "DSI-1:270"` | 登录界面自身的合成器旋转内屏 |
-| niri 桌面、桌面锁屏 | `output "DSI-1" { transform "270"; }` | 启动时直接采用横屏，无需登录后运行 IPC 命令 |
+| systemd-boot menu | `EFI/systemd/drivers/GopRotate_aa64.efi` | Loads the rotation driver used by the former rEFInd setup; the maintainer has verified the landscape menu |
+| Linux boot log, TTY | `fbcon=rotate:1` | Clockwise 90-degree landscape, keeping the existing setting |
+| Noctalia greeter | `settings.output.transforms = "DSI-1:270"` | The greeter's own compositor rotates the internal output |
+| niri desktop, desktop lock screen | `output "DSI-1" { transform "270"; }` | Landscape is applied at startup; no IPC command after login |
 
-niri 的角度按逆时针计算，270 度与 fbcon 的顺时针 90 度一致。
-登录界面独立于 niri，必须单独设置；这里只匹配内屏，未固定其他输出的方向。
-数位笔通过 `input { tablet { map-to-output "DSI-1"; } }` 绑定内屏，
-坐标自动跟随该输出的旋转。未绑定时 niri 使用不带旋转的整体桌面映射，
-可能出现笔尖与光标相差四分之一圈的现象。无需额外添加固定旋转校准矩阵。
-应用后用笔检查四角和中心；临时切回竖屏时，笔坐标也应随输出变换。
-先验证横屏下触摸四角是否与画面对应，不预先叠加全局触摸校准矩阵。
+niri measures angles counter-clockwise, so 270 degrees matches fbcon's clockwise 90
+degrees. The greeter is independent of niri and must be configured separately; this
+only matches the internal output and does not fix the orientation of other outputs.
+The pen is bound to the internal output through
+`input { tablet { map-to-output "DSI-1"; } }`, and its coordinates follow that
+output's rotation automatically. Without the binding, niri uses an unrotated
+desktop-wide mapping, which can make the pen tip and the cursor differ by a quarter
+turn. No extra fixed-rotation calibration matrix is needed.
+After applying, check the four corners and the centre with the pen; when temporarily
+switching back to portrait, the pen coordinates should follow the output transform
+too. First verify whether touch in landscape matches the corners of the picture,
+and do not stack a global touch calibration matrix on top in advance.
 
-systemd-boot 的 `console-mode` 选择固件提供的文本模式，不是旋转角度。
-菜单横屏由 GopRotate 驱动提供，无需重刷 UEFI。驱动沿用旧 rEFInd 引导资源中
-`BOOT/drivers_aa64/GopRotate_aa64.efi`，来源版本和哈希在 `nixos/boot.nix` 固定。
-systemd-boot 会在显示菜单前加载 ESP 的 `EFI/systemd/drivers/` 中对应架构的驱动；
-保留文件名的 `aa64.efi` 后缀，不需要复制 rEFInd 本体或 `refind.conf`。
+systemd-boot's `console-mode` selects a text mode offered by the firmware, not a
+rotation angle. The landscape menu comes from the GopRotate driver and does not
+require reflashing the UEFI. The driver reuses
+`BOOT/drivers_aa64/GopRotate_aa64.efi` from the earlier rEFInd boot resources, and
+its source revision and hash are pinned in `nixos/boot.nix`. systemd-boot loads the
+driver for the matching architecture from `EFI/systemd/drivers/` on the ESP before
+showing the menu; keep the `aa64.efi` suffix in the file name, and there is no need
+to copy the rEFInd binary or `refind.conf`.
 
-`boot.loader.systemd-boot.extraFiles` 同时用于 `nixos-rebuild boot/switch` 和
-`nabu-esp` 的 `esp.img` / `efi-files.zip` 打包，包含旋转驱动和 Android 启动程序。
-部署后可以检查 `/boot/efi/EFI/systemd/drivers/GopRotate_aa64.efi` 是否存在，
-再重启验证菜单、登录界面、桌面及显示接管。此前手动放入同一驱动若使用了不同文件名，
-应移走旧副本，只保留这一份，避免同一驱动被重复加载。
+`boot.loader.systemd-boot.extraFiles` is used both by
+`nixos-rebuild boot/switch` and by the `esp.img` / `efi-files.zip` packaging of
+`nabu-esp`, and covers the rotation driver and the Android boot program. After
+deploying, check whether `/boot/efi/EFI/systemd/drivers/GopRotate_aa64.efi` exists,
+then reboot and verify the menu, greeter, desktop and display takeover. If a
+previously copied driver of the same kind used a different file name, move the old
+copy away and keep only this one, so the same driver is not loaded twice.
 
-应用后重启，依次检查登录界面和桌面；在桌面运行 `niri msg outputs` 检查 DSI-1。
-已有用户配置应保留 `include "/etc/niri/config.kdl"`，且没有后续覆盖内屏方向的设置。
-临时手持竖屏仍可运行 `niri msg output DSI-1 transform normal`；恢复横屏使用
-`niri msg output DSI-1 transform 270`。默认方向由 KDL 管理。
+Reboot after applying and check the greeter and then the desktop; on the desktop run
+`niri msg outputs` to inspect DSI-1. An existing user configuration should keep
+`include "/etc/niri/config.kdl"` and must not override the internal output's
+orientation afterwards. While holding the tablet in portrait you can still run
+`niri msg output DSI-1 transform normal`; to restore landscape use
+`niri msg output DSI-1 transform 270`. The default is managed through the KDL.
 
-参考：
-- [niri 输出配置](https://niri-wm.github.io/niri/Configuration%3A-Outputs.html)
-- [Noctalia Greeter 1.3.1 示例配置](https://github.com/noctalia-dev/noctalia-greeter/blob/v1.3.1/examples/greeter.toml)
-- [Linux fbcon 旋转](https://docs.kernel.org/fb/fbcon.html)
-- [systemd-boot 配置](https://github.com/systemd/systemd/blob/v261/man/loader.conf.xml)
+References:
+- [niri output configuration](https://niri-wm.github.io/niri/Configuration%3A-Outputs.html)
+- [Noctalia Greeter 1.3.1 example configuration](https://github.com/noctalia-dev/noctalia-greeter/blob/v1.3.1/examples/greeter.toml)
+- [Linux fbcon rotation](https://docs.kernel.org/fb/fbcon.html)
+- [systemd-boot configuration](https://github.com/systemd/systemd/blob/v261/man/loader.conf.xml)
 
-## 应用与验证
+## Applying and validating
 
-在平板上，从仓库目录应用配置：
+On the tablet, apply the configuration from the repository directory:
 
 ```sh
 sudo nixos-rebuild switch --flake .#nabu
@@ -119,31 +151,40 @@ niri validate --config /etc/niri/config.kdl
 niri validate
 ```
 
-新加入的文件需要先纳入 Git 跟踪，Git flake 才能读取；不需要提交。
-可用 `nix flake check --no-build --all-systems` 检查所有平台的配置求值。
-每次构建系统配置都会使用构建机上的 niri 校验 KDL，交叉构建也不需要运行 aarch64 程序。
-软件包和会话环境更新后建议重新登录，再检查截图、锁屏解锁、媒体键和文件选择器。
+Newly added files must be tracked by Git before the Git flake can read them; no
+commit is required. `nix flake check --no-build --all-systems` checks the
+configuration evaluation for all platforms. Every system build validates the KDL
+with the niri on the build machine, so cross builds do not need to run aarch64
+programs either. After updating packages or the session environment it is worth
+logging in again and then checking screenshots, lock-screen unlock, media keys and
+the file chooser.
 
-`~/.config/niri/config.kdl` 是归 `nabu` 所有的可编辑普通文件，通过下面一行引用系统配置
-（niri 的语法是 `include`，不是 `import`）：
+`~/.config/niri/config.kdl` is an ordinary editable file owned by `nabu`, which
+references the system configuration with the following line (niri's keyword is
+`include`, not `import`):
 
 ```kdl
 include "/etc/niri/config.kdl"
 ```
 
-镜像首次启动时，systemd-tmpfiles 创建归 `nabu` 所有的 `~/.config`、
-`~/.config/niri`（0700），并复制初始配置为普通文件（0600）。
-已有配置不会被覆盖，用户和 Noctalia 可继续在引用之后添加本地设置或主题引用。
-系统配置更新仍由 NixOS 管理；已有系统若缺少这行 `include`，需手动补到用户文件开头。
-也可以在部署前直接运行 `niri validate --config nixos/niri.kdl` 检查语法。
-KDL 校验不验证 IPC 的运行效果，锁屏、触摸输入和屏幕共享仍需真机测试。
+On the image's first boot, systemd-tmpfiles creates `~/.config` and
+`~/.config/niri` (0700) owned by `nabu`, and copies the initial configuration as an
+ordinary file (0600). An existing configuration is not overwritten, and the user and
+Noctalia can keep adding local settings or theme references after the include. System
+configuration updates remain managed by NixOS; on an existing system that lacks this
+`include` line, add it manually at the start of the user file.
+You can also check the syntax before deploying by running
+`niri validate --config nixos/niri.kdl`. KDL validation does not verify how IPC
+behaves at runtime; the lock screen, touch input and screen sharing still need
+on-device testing.
 
-## 参考
+## References
 
-- [niri 26.04 默认配置](https://github.com/niri-wm/niri/blob/v26.04/resources/default-config.kdl)
-- [NixOS Wiki：niri](https://wiki.nixos.org/wiki/Niri)
-- [Noctalia v5：niri 集成](https://docs.noctalia.dev/noctalia/compositor-settings/niri/)
-- [Noctalia v5：IPC 命令](https://docs.noctalia.dev/noctalia/ipc/)
+- [niri 26.04 default configuration](https://github.com/niri-wm/niri/blob/v26.04/resources/default-config.kdl)
+- [NixOS Wiki: niri](https://wiki.nixos.org/wiki/Niri)
+- [Noctalia v5: niri integration](https://docs.noctalia.dev/noctalia/compositor-settings/niri/)
+- [Noctalia v5: IPC commands](https://docs.noctalia.dev/noctalia/ipc/)
 
-保留本仓库原有 `Mod+,` 设置面板与 `Mod+Shift+K` 虚拟键盘绑定，
-因此 niri 默认的吸入窗口操作改到 `Mod+Ctrl+,`，显示器导航使用方向键。
+This repository keeps its original `Mod+,` settings panel and `Mod+Shift+K` virtual
+keyboard bindings, so niri's default consume-window action moved to `Mod+Ctrl+,`
+and monitor navigation uses the direction keys.

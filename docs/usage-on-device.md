@@ -1,66 +1,81 @@
-# 设备上更新、回滚与清理
+**English** | [简体中文](zh_CN/usage-on-device.md)
 
-[返回项目首页](../README_zh_CN.md)
+# On-device updates, rollback and cleanup
 
-当前由 NixOS 原生 systemd-boot 安装器管理启动文件和 generation 菜单。
-不再运行 UKI 部署 hook，也没有 `nabu-previous.efi` 备份机制。
+[Back to project home](../README.md)
 
-## 准备配置
+Boot files and the generation menu are currently managed by the native NixOS
+systemd-boot installer. No UKI deployment hook runs any more, and there is no
+`nabu-previous.efi` backup mechanism.
 
-在平板上保存仓库副本，从你要使用的提交或 release 开始修改：
+## Preparing a configuration
+
+Keep a checkout of the repository on the tablet and start modifying from the commit
+or release you want to use:
 
 ```sh
 git clone https://github.com/hybrid-orbital/nixos-for-nabu.git
 cd nixos-for-nabu
 git checkout v0.1.0-alpha
-# 需要继续修改时可创建自己的分支
+# create your own branch when you want to keep modifying
 git switch -c my-nabu
 ```
 
-当前关闭了自动设置 flake registry 和 NIX_PATH，应显式使用 `--flake`。
-新文件需要先纳入 Git 跟踪，Git flake 才能读取；不必先提交。
-从交叉镜像开始的首次原生 rebuild 可能重建大量依赖，见[构建指南](building.md)。
+Setting the flake registry and NIX_PATH automatically is disabled, so use
+`--flake` explicitly. New files must be tracked by Git before the Git flake can
+read them; a commit is not required. The first native rebuild after starting from a
+cross-built image may rebuild a large number of dependencies; see the
+[build guide](building.md).
 
-## 日常更新
+## Routine updates
 
-ext4 系统的主机名是 `nabu`（`ext4-nabu` 的别名），impermanent 系统是
-`impermanent-nabu`，所以下面的命令会按已安装的存储方案自动选中对应配置，
-无需手写 `#hostname`：
+The ext4 system's host name is `nabu` (an alias of `ext4-nabu`) and the impermanent
+one is `impermanent-nabu`, so the command below automatically selects the
+configuration of the installed storage profile without writing `#hostname` by hand:
 
 ```sh
 sudo nixos-rebuild switch --flake .
 ```
 
-它构建系统闭包、更新系统 profile、安装启动条目并激活运行中的配置。
-内核和 initrd 的变更在下一次启动生效。只准备下次启动而不切换当前服务时：
+It builds the system closure, updates the system profile, installs the boot entries
+and activates the running configuration. Kernel and initrd changes take effect on
+the next boot. To prepare only the next boot without switching the running services:
 
 ```sh
 sudo nixos-rebuild boot --flake .
 ```
 
-只临时测试用户态配置可用 `nixos-rebuild test --flake .`；它不把测试结果设成
-下一次默认启动系统，也不能临时更换当前运行内核。桌面配置更新与可写用户配置的关系见
-[桌面说明](desktop.md#应用与验证)。
+To test a userspace-only configuration temporarily, use
+`nixos-rebuild test --flake .`; it does not make the test result the default system
+for the next boot, and it cannot change the running kernel. See the
+[desktop notes](desktop.md#applying-and-validating) for how desktop
+configuration updates relate to writable user configuration.
 
-需要更新 nixpkgs 时先有意识地执行 `nix flake update`，再构建验证。普通 rebuild
-不会自动把已锁定输入更新到最新版本。保存可启动的旧 generation，尤其是在修改内核、
-initrd、图形或电源设置前。
+When you want to update nixpkgs, run `nix flake update` deliberately first and then
+build and validate. An ordinary rebuild does not automatically update locked inputs
+to their latest versions. Keep a bootable older generation, especially before
+changing the kernel, initrd, graphics or power settings.
 
-## 回滚
+## Rollback
 
-系统还能使用时：
+While the system is still usable:
 
 ```sh
 sudo nixos-rebuild switch --rollback
 ```
 
-如果只想安排下次启动旧代而暂不切换当前服务，可用 `sudo nixos-rebuild boot --rollback`。
-重启后核对实际启动条目和内核。不要以单独修改 Nix profile 代替启动器部署。
+If you only want to schedule the older generation for the next boot without
+switching the running services, use `sudo nixos-rebuild boot --rollback`. After
+rebooting, check the actual boot entry and kernel. Do not use a plain Nix profile
+change as a substitute for boot-loader deployment.
 
-新配置不能正常启动时，在 systemd-boot 菜单选择仍保留的旧 generation。该条目选择
-对应内核、initrd、DTB 和具体系统闭包，而不是“旧内核加当前 profile”。
-手动从菜单启动旧代不等于已经永久改变系统 profile；进入系统后检查 generations，
-再执行相应回滚或修复配置并 rebuild。不要假定 `--rollback` 总会指向刚才手动选择的条目。
+When a new configuration does not boot, select a retained older generation in the
+systemd-boot menu. That entry selects the matching kernel, initrd, DTB and specific
+system closure, rather than "old kernel plus current profile". Booting an older
+generation from the menu by hand does not mean the system profile has been changed
+permanently; after booting, inspect the generations and then either roll back or fix
+the configuration and rebuild. Do not assume `--rollback` always points at the entry
+you just selected manually.
 
 ```sh
 sudo nix-env -p /nix/var/nix/profiles/system --list-generations
@@ -70,34 +85,45 @@ readlink -f /nix/var/nix/profiles/system
 bootctl list
 ```
 
-`/run/current-system`、`/run/booted-system` 与默认 system profile 在 `switch` 或手动
-选择旧代后可能不同，这本身不代表错误。generation 不恢复用户文件、数据库内容或磁盘分区。
+`/run/current-system`, `/run/booted-system` and the default system profile may
+differ after a `switch` or after selecting an older generation by hand; that alone
+is not an error. A generation does not restore user files, database contents or disk
+partitions.
 
-## ESP 空间和历史清理
+## ESP space and cleaning up history
 
-相同启动文件可以共享，但不同内核、initrd、DTB 仍需要空间。
-当前仓库没有显式设置 generation 数量上限，可在自己的配置中加入：
+Identical boot files can be shared, but different kernels, initrds and DTBs still
+need space. The repository does not currently set an explicit generation limit; you
+can add this to your own configuration:
 
 ```nix
 boot.loader.systemd-boot.configurationLimit = 10;
 ```
 
-这个选项限制启动菜单保留的代数，不等价于删除 Nix store 中的历史系统。
-删除旧 generations 和 GC 会减少可回滚范围；先确认要保留的版本。
+This option limits the number of generations kept in the boot menu and is not
+equivalent to deleting historical systems from the Nix store. Deleting old
+generations and running GC reduces what you can roll back to; first confirm which
+versions you want to keep.
 
 ```sh
-# 示例：明确不再需要 30 天前的 generations 后执行
+# Example: after you are sure that generations older than 30 days are no longer needed
 sudo nix-collect-garbage --delete-older-than 30d
-# 重新部署菜单，使其与保留的系统 generations 一致
+# redeploy the menu so that it matches the retained system generations
 sudo nixos-rebuild boot --flake .
 df -h / /boot/efi
 ```
 
-初始镜像的 `/nixos/*` 和 `nixos-nabu.conf`，以及旧 rEFInd/UKI 文件，不一定属于
-后续 nixpkgs 安装器的清理范围。不要先删文件再看能否启动；先检查所有保留菜单中的引用。
+The initial image's `/nixos/*` and `nixos-nabu.conf`, as well as old rEFInd/UKI
+files, are not necessarily covered by later nixpkgs installer cleanup. Do not delete
+files first and then see whether it still boots; check the references in all
+retained menu entries first.
 
-## 电源与故障
+## Power and failures
 
-当前 logind 忽略电源键，niri 也禁用了内建电源键处理。低功耗休眠未解决，
-不要将按键无响应误认为正常休眠，也不要将锁屏等同于熄屏或 suspend。
-偶发启动失败仍是已知问题。报告方法见[设备状态](device-status.md)和[启动日志](boot-logging.md)。
+logind currently ignores the power key and niri also disables its built-in power-key
+handling. The system can enter s2idle again (the Bluetooth UART immediate-wake bug
+is fixed), but an unresponsive key does not suspend the system: do not mistake an
+unresponsive key for a normal suspend, and do not equate locking the screen with
+screen-off or suspend. Occasional boot failures are still a known issue; see
+[device status](device-status.md) and
+[boot diagnostics](boot-logging.md) for how to report them.

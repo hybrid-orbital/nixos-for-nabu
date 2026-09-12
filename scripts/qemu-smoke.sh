@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Historical UKI-only helper: not compatible with current systemd-boot outputs.
-# See docs/building.md; adapting this helper is tracked in docs/roadmap.md.
+# See docs/zh_CN/building.md; adapting this helper is tracked in docs/zh_CN/roadmap.md.
 # Boot the shipped kernel/initrd with copies of both flashable partitions.
 # QEMU supplies a virt DTB; the embedded nabu DTB is only usable on hardware.
 set -euo pipefail

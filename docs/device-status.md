@@ -1,56 +1,93 @@
-# 设备支持状态
+**English** | [简体中文](zh_CN/device-status.md)
 
-[返回项目首页](../README_zh_CN.md)
+# Device support status
 
-基线：`v0.1.0-alpha` / `c26c2c1`，2026-09-07。
-“已验证”指维护者在现有 nabu 设备上报告的结果，不代表所有硬件批次、固件版本和
-使用场景都已覆盖。配置中启用某项功能也不等于完成了该项硬件验证。
+[Back to project home](../README.md)
 
-## 已验证的发布路径
+Baseline: `v0.1.0-alpha` / `c26c2c1`, 2026-09-07. "Verified" refers to results
+reported by the maintainer on the available nabu device; it does not mean that all
+hardware batches, firmware versions and use cases are covered. Enabling a feature
+in the configuration does not mean that the hardware behind it has been validated.
 
-- systemd-boot 可以启动当前 NixOS 镜像，提供原生 generation 菜单。
-- niri + Noctalia 桌面镜像已发布并在真机可用。
-- systemd-boot 菜单横屏已经验证；登录界面和桌面配置了对应的横屏方向。
-- 数位笔在配置中绑定内屏 `DSI-1`，随输出旋转；详细设置见[桌面说明](desktop.md)。
+## Verified release path
 
-## 已知问题
+- systemd-boot boots the current NixOS image and provides the native generation
+  menu.
+- The niri + Noctalia desktop image has been released and works on hardware.
+- The landscape systemd-boot menu is verified; the greeter and desktop are
+  configured with the matching orientation.
+- The pen is bound to the internal `DSI-1` output in the configuration and rotates
+  with the output; see the [desktop notes](desktop.md) for details.
 
-| 项目 | 当前状态 | 后续调查 |
+## Known issues
+
+| Area | Current state | Follow-up |
 | --- | --- | --- |
-| 相机 | 维护者确认不可用 | 检查内核驱动、设备树、固件及用户态相机栈 |
-| 低功耗休眠 | 维护者确认尚不可用 | 区分显示关闭、系统 suspend、唤醒源和待机功耗 |
-| 启动可靠性 | 偶尔启动失败，原因未定 | 分别记录冷启动/热重启、失败阶段、日志和硬件/固件版本 |
-| 电源键 | 当前刻意忽略 | 配合显示与休眠验证重新设计按键行为 |
-| rootfs 体积 | 当前桌面镜像较大 | 测量闭包、拆分变体、减少非必要依赖 |
+| Camera | Maintainer confirms it is unavailable | Check the kernel driver, device tree, firmware and the userspace camera stack |
+| Low-power suspend | Maintainer confirms s2idle is reachable and the Bluetooth UART immediate-wake bug is fixed and validated on hardware | Power key, auto-suspend, display resume and standby power |
+| Boot reliability | Boots occasionally fail; cause undetermined | Record cold boots/warm reboots, the failing stage, logs, and hardware/firmware versions separately |
+| Power key | Deliberately ignored for now | Redesign key behaviour together with display and suspend validation |
+| rootfs size | The current desktop image is large | Measure the closure, split variants, drop unnecessary dependencies |
 
-当前 `services.logind.settings.Login.HandlePowerKey = "ignore"` 与 niri 的
-`disable-power-key-handling` 共同避免现有挂起/熄屏问题。它们是临时行为约束，
-不是完成的电源管理方案。锁屏、屏幕关闭、低功耗休眠、恢复显示和解锁应分别测试。
+`services.logind.settings.Login.HandlePowerKey = "ignore"` together with niri's
+`disable-power-key-handling` currently avoids existing suspend/screen-off problems.
+These are temporary behavioural constraints, not a finished power-management
+solution. Locking, screen-off, low-power suspend, display resume and unlock should
+be tested separately.
 
-跨重启随机 Wi-Fi MAC 的问题已解决：通用 board-2.bin 不含 MAC，内核补丁
-（`pkgs/kernel/patches/0002-nabu-ath10k-mac-address.patch`）从 SMBIOS 主板序列号派生
-稳定的本地管理地址，必要时可用 `ath10k_core.macaddr=` 模块参数覆盖，方案源自
-[TwinbornPlate75/linux-nabu](https://github.com/TwinbornPlate75/linux-nabu)。
+The random Wi-Fi MAC address across reboots is resolved: the generic `board-2.bin`
+carries no MAC, so a kernel patch
+(`pkgs/kernel/patches/0002-nabu-ath10k-mac-address.patch`) derives a stable
+locally-administered address from the SMBIOS board serial, overridable with the
+`ath10k_core.macaddr=` module parameter. The approach comes from
+[TwinbornPlate75/linux-nabu](https://github.com/TwinbornPlate75/linux-nabu).
 
-## 已有配置，但需要更完整的验证记录
+Suspend-to-idle waking up immediately is fixed, and the maintainer has confirmed on
+hardware that entering suspend works. nabu's WCN3991 Bluetooth UART (`uart13` /
+`c8c000.serial`, alias `hsuart0`) is a serdev whose port stays open, so the runtime
+PM usage count never reaches zero at suspend time: `qcom_geni_serial_runtime_suspend()`
+never runs, `geni_se_resources_off()` is skipped, the sleep pinctrl
+(`qup_uart13_sleep`: GPIO input with a `gpio46` pull-up) is never applied and the
+QUP13 pads stay in their `bias-disable` default state. Together with the Bluetooth
+controller's traffic and the TLMM behaviour of latching edge-IRQ status while
+masked, the dedicated wake IRQ fires the moment `dpm_suspend_noirq` arms it, so the
+system resumes as soon as it has entered suspend-to-idle. The fix backports
+upstream commit `d0cd9c8d0fd5` ("serial: qcom-geni: add force suspend/resume to
+system sleep callbacks" by **Praveen Talari** `<praveen.talari@oss.qualcomm.com>`,
+merged via tty-next for v6.18-rc4 and absent from 6.17.y) as
+`pkgs/kernel/patches/0005-qcom-geni-serial-force-suspend-system-sleep.patch`; the
+patch keeps the upstream author, commit message and sign-off chain. Bluetooth
+operation and the wake capability are unchanged; what is still missing is a record
+for the power key, auto-suspend, display resume and standby power.
 
-代码包含 UFS、Wi-Fi、图形、面板/背光、触摸、数位笔、音频及高通服务支持。
-例如扬声器目前仍依赖特定 ALSA 路由设置；服务启用不能证明所有音频输入输出均正常。
-Bluetooth、传感器、外接设备以及不同存储批次等项目，应按具体设备和版本补充结果，
-不在缺少报告时自动列为“正常”或“损坏”。
+## Configured, but needing fuller validation records
 
-Android 菜单和 Reboot2Android 程序由配置部署；迁移固件、重新刷写或发布新镜像时，
-仍需将 Android 返回路径纳入回归测试。
+The code includes UFS, Wi-Fi, graphics, panel/backlight, touch, pen, audio and
+Qualcomm service support. The speakers, for example, still rely on a specific ALSA
+routing setup, and an enabled service does not prove that all audio inputs and
+outputs work. Bluetooth, sensors, external devices and different storage batches
+should be reported per device and version; without reports they are neither
+automatically "working" nor "broken".
 
-## 如何提供有用的报告
+The Android menu and the Reboot2Android program are deployed by the configuration;
+when migrating firmware, reflashing or publishing a new image, the Android return
+path still needs to be part of regression testing.
 
-请包含：
+## How to provide a useful report
 
-1. 镜像 tag/提交、原生或交叉构建、是否修改配置。
-2. Aloha/DBKP 版本、Secure Boot 状态、设备内存与存储规格（已知时提供芯片批次）。
-3. 重现步骤、期望与实际行为；冷启动和热重启分别统计成功/失败次数。
-4. 失败停在菜单、EFI stub、内核日志、登录界面还是桌面；SSH 是否仍能连接。
-5. `/proc/cmdline`、`systemctl --failed` 和相关 journal，方法见[日志说明](boot-logging.md)。
+Please include:
 
-公开日志前检查其中的用户名、地址、网络名称等信息。一次恢复启动、一次桌面可用
-或一次 suspend 命令返回，都不足以关闭间歇性问题。
+1. Image tag/commit, native or cross-built, and whether the configuration was
+   modified.
+2. Aloha/DBKP version, Secure Boot state, device memory and storage specifications
+   (chip batch when known).
+3. Reproduction steps, expected and actual behaviour; count successes/failures for
+   cold boots and warm reboots separately.
+4. Whether the failure stops at the menu, the EFI stub, the kernel log, the greeter
+   or the desktop; whether SSH is still reachable.
+5. `/proc/cmdline`, `systemctl --failed` and the relevant journal; see
+   [boot diagnostics](boot-logging.md) for how to collect them.
+
+Check logs for usernames, addresses and network names before publishing them. One
+recovered boot, one usable desktop session or one `suspend` command returning is
+not enough to close an intermittent problem.

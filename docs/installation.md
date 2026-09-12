@@ -1,36 +1,48 @@
-# 安装与首次启动
+**English** | [简体中文](zh_CN/installation.md)
 
-[返回项目首页](../README_zh_CN.md)
+# Installation and first boot
 
-当前发布为 [v0.1.0-alpha](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v0.1.0-alpha)，
-维护者已验证 niri + Noctalia 和 systemd-boot generation 菜单可用。
-仍有相机不可用、低功耗休眠未解决和偶发启动失败（重启后随机 Wi-Fi MAC 地址问题已解决），
-见[设备状态](device-status.md)。
+[Back to project home](../README.md)
 
-## 适用设备与已有环境
+The current release is
+[v0.1.0-alpha](https://github.com/hybrid-orbital/nixos-for-nabu/releases/tag/v0.1.0-alpha).
+The maintainer has verified the niri + Noctalia desktop and the systemd-boot
+generation menu. The camera is still unavailable and boots occasionally fail (the
+random Wi-Fi MAC address issue is resolved, and suspend-to-idle is reachable again
+after the Bluetooth UART immediate-wake fix). See
+[device status](device-status.md).
 
-仅面向小米平板 5（nabu）。本仓库生成 rootfs 和 ESP，**不生成 Aloha UEFI 或 DBKP 镜像**，
-也不自动为设备分区。以下步骤假设已经具备可用的 Aloha/双启动环境、关闭 Secure Boot，
-且分区布局与 [`nixos/hardware-nabu.nix`](../nixos/hardware-nabu.nix) 一致：
+## Target device and existing environment
 
-| 分区标签 | 用途 | Linux 挂载点 |
+This project only targets the Xiaomi Pad 5 (nabu). It produces the rootfs and the
+ESP, **does not build Aloha UEFI or DBKP images** and does not partition the
+device. The steps below assume a working Aloha/dual-boot environment, Secure Boot
+disabled, and a partition layout matching
+[`nixos/hardware-nabu.nix`](../nixos/hardware-nabu.nix):
+
+| Partition label | Purpose | Linux mount point |
 | --- | --- | --- |
-| `esp` | FAT EFI 系统分区，存放 systemd-boot 和启动文件 | `/boot/efi` |
-| `linux` | ext4 NixOS 根文件系统 | `/` |
+| `esp` | FAT EFI system partition holding systemd-boot and boot files | `/boot/efi` |
+| `linux` | ext4 NixOS root filesystem | `/` |
 
-不要仅凭设备型号假定现有分区布局正确。刷写会替换现有 Linux 数据和 ESP 内容，
-包括旧发行版和自定义启动配置；先备份。该镜像保留 Android 启动入口，但不备份 Android
-或其他数据，也不保证任意第三方固件和分区布局兼容。
+Do not assume the existing partition layout is correct just because the device
+model matches. Flashing replaces existing Linux data and ESP contents, including
+older distributions and custom boot configurations; back up first. The image keeps
+the Android boot entry, but it does not back up Android or other data, and
+compatibility with arbitrary third-party firmware and partition layouts is not
+guaranteed.
 
-## 下载与合并
+## Download and reassemble
 
-`v0.1.0-alpha` 提供：
+`v0.1.0-alpha` provides:
 
-- `esp.img`：350105600 字节的 ESP 分区镜像。
-- `efi-files.zip`：ESP 内文件的归档，供检查或手动部署；不是分区镜像。
-- `nabu-rootfs.ext4.img.zst.part00` 与 `nabu-rootfs.ext4.img.zst.part01`：压缩 rootfs 的两个分卷。
+- `esp.img`: a 350105600-byte ESP partition image.
+- `efi-files.zip`: an archive of the files inside the ESP, for inspection or
+  manual deployment; not a partition image.
+- `nabu-rootfs.ext4.img.zst.part00` and `nabu-rootfs.ext4.img.zst.part01`: the two
+  parts of the compressed rootfs.
 
-将两个分卷放在同一目录，按顺序合并后解压：
+Place both parts in one directory, reassemble them in order, then decompress:
 
 ```sh
 cat nabu-rootfs.ext4.img.zst.part00 nabu-rootfs.ext4.img.zst.part01 > nabu-rootfs.ext4.img.zst
@@ -38,14 +50,18 @@ zstd -t nabu-rootfs.ext4.img.zst
 zstd -d nabu-rootfs.ext4.img.zst
 ```
 
-需要为分卷、合并压缩包和解压镜像预留空间。压缩文件大小不是设备所需分区大小。
-`zstd -t` 检查压缩流完整性，不替代可信的发布校验值。
-此次 release 未附 `SHA256SUMS`；本地 `scripts/build-image.sh` 会生成该文件，
-使用这类产物时应在目录中运行 `sha256sum -c SHA256SUMS`。不要混合不同版本的 ESP 和 rootfs。
+Allow space for the parts, the combined archive and the decompressed image. The
+compressed size is not the partition size the device needs. `zstd -t` checks
+compressed-stream integrity and is not a substitute for a trusted release
+checksum; this release ships no `SHA256SUMS`, while the local
+`scripts/build-image.sh` generates one—run `sha256sum -c SHA256SUMS` in that
+directory when using such artifacts. Do not mix ESP and rootfs from different
+versions.
 
-## 刷写到现有分区
+## Flash to the existing partitions
 
-进入已支持该布局的 fastboot 环境，确认设备和分区容量后：
+Enter a fastboot environment that supports this layout, verify the device and the
+partition sizes, then flash:
 
 ```sh
 fastboot devices
@@ -56,23 +72,32 @@ fastboot flash esp esp.img
 fastboot reboot
 ```
 
-**这里是 `fastboot flash esp esp.img`，不是 `fastboot flash boot esp.img`。**
-`v0.1.0-alpha` 初始 release 说明中的 `boot` 是笔误；`boot` 是固件/Android 启动链使用的
-分区，ESP 镜像不能写到那里。以上指令仅适用于确认具有 `linux`、`esp` 分区的设备。
-如果 fastboot 无法查询或访问相应分区，先确认设备模式与布局，不要改猜其他分区名。
+**This is `fastboot flash esp esp.img`, not `fastboot flash boot esp.img`.** The
+`boot` in the initial `v0.1.0-alpha` release notes was a typo; `boot` is the
+partition used by the firmware/Android boot chain, and the ESP image must not be
+written there. These commands only apply to devices confirmed to have `linux` and
+`esp` partitions. If fastboot cannot query or access those partitions, check the
+device mode and layout first; do not guess other partition names.
 
-当前 rootfs 会用 `x-systemd.growfs` 扩展 ext4 到已有 `linux` 分区大小，不修改 GPT，
-也不能把过小的分区变大。此流程将 ESP 的回退入口切换为 systemd-boot，不再使用 rEFInd。
+The current rootfs grows ext4 to the existing `linux` partition size through
+`x-systemd.growfs`; it does not modify the GPT and cannot enlarge a partition that
+is too small. This procedure switches the ESP fallback entry to systemd-boot;
+rEFInd is no longer used.
 
-另有可选的 tmpfs root + Btrfs 镜像，构建、安装和更新方法见[存储说明](storage.md)。
-本页的 release 安装步骤继续使用传统 ext4 版本。
+An optional tmpfs root + Btrfs image is also available; see the
+[storage guide](storage.md) for how to build, install and
+update it. The release installation steps on this page keep using the
+conventional ext4 variant.
 
-## 首次启动
+## First boot
 
-1. systemd-boot 显示 NixOS 和 Android 入口；初始镜像只有一个 NixOS generation。
-2. 进入 Noctalia 登录界面，再登录 niri。默认用户为 `nabu`，初始密码为 `nabu`。
-3. 首次启动注册 Nix store 数据库，日常更新之后使用 `nixos-rebuild`。
-4. 修改密码，并确认网络和日志可用：
+1. systemd-boot shows the NixOS and Android entries; the initial image has a
+   single NixOS generation.
+2. Log in at the Noctalia greeter and then into niri. The default user is `nabu`
+   and the initial password is `nabu`.
+3. The first boot registers the Nix store database; use `nixos-rebuild` for
+   day-to-day updates afterwards.
+4. Change the password and confirm that networking and logs work:
 
 ```sh
 passwd
@@ -83,30 +108,43 @@ bootctl list
 cat /proc/cmdline
 ```
 
-当前配置同时开启 TTY 自动登录和 SSH 密码认证。部署为个人长期使用系统时，应在配置中
-调整自动登录、SSH 访问和用户设置；单独修改密码不会关闭 TTY 自动登录。
+The current configuration enables both TTY autologin and SSH password
+authentication. When deploying this as a long-term personal system, adjust
+autologin, SSH access and user settings in the configuration; changing the
+password alone does not disable TTY autologin.
 
-屏幕菜单、登录界面和桌面的横屏分别配置，见[桌面说明](desktop.md)。相机和低功耗休眠
-尚不可用，电源键被刻意忽略；锁屏也不代表已进入低功耗状态。
+Landscape orientation for the boot menu, greeter and desktop is configured
+separately; see the [desktop notes](desktop.md). The camera is
+still unavailable and the power key is deliberately ignored; suspend-to-idle is
+reachable again, but locking the screen does not mean the system entered a
+low-power state.
 
-## 从旧 UKI/rEFInd 安装迁移
+## Migrating from an old UKI/rEFInd installation
 
-直接刷 rootfs 是重装，会覆盖原 Linux 数据。如果需要保留现有 NixOS，请先备份 ESP、
-记录可用启动入口与当前系统配置，再在设备上构建和部署本版本：
+Flashing the rootfs is a reinstall and overwrites existing Linux data. To keep an
+existing NixOS installation, back up the ESP, record the working boot entries and
+the current system configuration first, then build and deploy this release on the
+device:
 
 ```sh
 sudo nixos-rebuild boot --flake .#nabu
 ```
 
-重启前检查 `bootctl list`、ESP 的 systemd-boot 入口和 Android 文件。旧 UKI、旧 rEFInd
-配置可能仍留在 ESP，不能假定新安装器会删除这些非其管理的文件。先完成新系统启动和
-回滚验证，再按引用关系清理。交叉镜像迁移到原生 rebuild 的成本见[构建说明](building.md)。
+Before rebooting, check `bootctl list`, the systemd-boot entries on the ESP and
+the Android files. Old UKIs and rEFInd configuration may still be present on the
+ESP; do not assume the new installer removes files it does not manage. Verify that
+the new system boots and can roll back before cleaning up by reference order. See
+the [build notes](building.md) for the cost of moving from a
+cross-built image to a native rebuild.
 
-## 验证与报告
+## Validation and reporting
 
-发布前与新设备测试时，记录：菜单是否可操作、桌面是否可登录、一次更新后的 generation
-是否出现、能否选择保留的旧代，以及 Android 入口是否可用。冷启动、热重启和重复启动
-应分别记录；一次成功不等于偶发启动问题已经解决。
+Before a release and when testing a new device, record whether the menu is
+usable, whether the desktop can be logged into, whether a new generation appears
+after one update, whether a retained older generation can be selected, and whether
+the Android entry works. Record cold boots, warm reboots and repeated boots
+separately; one success does not mean intermittent boot problems are solved.
 
-失败时按[日志排查](boot-logging.md)采集资料。只有黑屏或重启现象不足以断言是 DTB、
-签名、显示驱动或 rootfs 的某一项故障。
+On failure, collect data as described in [boot diagnostics](boot-logging.md).
+A black screen or a reboot alone is not enough to attribute the fault
+to the DTB, signatures, the display driver or the rootfs.

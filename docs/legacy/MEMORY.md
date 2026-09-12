@@ -1,8 +1,9 @@
 # MEMORY.md — 早期移植记录（历史资料）
 
-> **已归档为历史资料。** 当前项目已发布 systemd-boot + niri/Noctalia 镜像。
-> 当前操作与目标请阅读 [README](README_zh_CN.md)、[启动架构](docs/architecture.md)
-> 和[路线图](docs/roadmap.md)。下文的 UKI、构建进度、机器资源和操作约定仅适用于历史上下文。
+> **已归档为历史资料**，现存放于 `docs/legacy/MEMORY.md`。当前项目已发布
+> systemd-boot + niri/Noctalia 镜像。当前操作与目标请阅读
+> [README](../../README_zh_CN.md)、[启动架构](../zh_CN/architecture.md) 和
+> [路线图](../zh_CN/roadmap.md)。下文的 UKI、构建进度、机器资源和操作约定仅适用于历史上下文。
 
 > 更新：2026-09-03 后续会话；2026-09-03 凌晨追加 **§7（平板本机 Podman 构建环境已打通）**——最新状态先读 §7.6。
 > 本文记录当时的移植环境和决策，不能作为当前构建、启动或项目状态的依据。
@@ -76,12 +77,12 @@ nix build .#nabu-uki --print-out-paths   # 全量编译 ~50-60 分钟，需 ≥2
 # 产物：<store路径>/nabu-6.17.0-sm8150.efi（另有 nabu.efi 符号链接）
 ```
 
-上机测试：按 `docs/testing-uki.md`（复制进 ESP、rEFInd 选择、串口/现象判断标准）。
+上机测试：按 `testing-uki.md`（复制进 ESP、rEFInd 选择、串口/现象判断标准）。
 
 ### 下一步任务队列
 1. 全量构建 nabu-uki（新设备上）
 2. 失败则读 `nix log <drv>` 修（触摸屏已过，若再挂大概率在 drivers/ 后段或 modules-shrunk/initrd/ukify 环节）
-3. 成功后上机：UEFI → rEFInd → nabu.efi，按 docs/testing-uki.md 判定
+3. 成功后上机：UEFI → rEFInd → nabu.efi，按 testing-uki.md 判定
 4. rootfs 镜像（`nixos/rootfs-image.nix` 已写好，`scripts/build-image.sh rootfs`；交叉构建 ext4 偶发 flaky，必要时上 aarch64 机器）
 5. 首次真机启动调通后：清理 README 状态清单、加 CI、DE 变体（见 README）
 
@@ -105,7 +106,7 @@ nixos/hardware-nabu.nix       # UFS/ESP 挂载、qrtr→pd-mapper→rmtfs/tqftps
 nixos/configuration.nix       # 用户 nabu、fcitx5、NetworkManager+iwd
 nixos/rootfs-image.nix        # 无特权 mke2fs ext4 rootfs 镜像
 scripts/build-image.sh        # esp/uki/rootfs 三种构建模式
-docs/testing-uki.md           # 上机测试步骤与判定标准
+testing-uki.md           # 上机测试步骤与判定标准
 README.md / README_zh_CN.md   # 双语文档（启动链图、状态清单）
 ```
 
@@ -159,7 +160,7 @@ README.md / README_zh_CN.md   # 双语文档（启动链图、状态清单）
 1. 在 `nabu-builder` 容器内重新启动 `nix build .#nabu-uki`（命令见 7.2；磁盘 110G 充足；平板原生 8 核，建议 `--cores 6 --max-jobs 1` 并盯内存）。nix 会尽量复用已缓存的部分，但内核主体因未成功登记，重跑大概率从头、需预留完整时长。
 2. 重跑期间务必**监控电量**（见 7.7）——上次构建期间电量持续下滑、电源充电跟不上。
 3. 失败读 `nix log <drv>` 或 `/home/mooling/nix-build-tmp/` 下日志修（若挂大概率在 drivers/ 后段或 modules-shrunk/initrd/ukify 环节）。
-4. 成功后产物 `nabu-6.17.0-sm8150.efi`，按 `docs/testing-uki.md` 复制进 ESP 上机测试（rEFInd 选择）。
+4. 成功后产物 `nabu-6.17.0-sm8150.efi`，按 `testing-uki.md` 复制进 ESP 上机测试（rEFInd 选择）。
 5. rootfs 镜像（`scripts/build-image.sh rootfs`）同样可在本容器原生构建，无需虚拟化。
 6. 首启调通后：清理 README 状态清单、加 CI、DE 变体（同 §4 队列）。
 

@@ -1,64 +1,100 @@
-# 路线图
+**English** | [简体中文](zh_CN/roadmap.md)
 
-[返回项目首页](../README_zh_CN.md)
+# Roadmap
 
-当前基线是已经发布、经维护者真机验证的 systemd-boot + niri + Noctalia 镜像。
-后续目标是让 nabu 更容易构建、维护和日常使用，尽量沿用 NixOS 的模块、启动管理和
-配置组合方式。下面列的是工作方向与验收依据，不是已经提供的功能或确定发布日期。
+[Back to project home](../README.md)
 
-## 构建与交叉编译
+The current baseline is the released, maintainer-verified systemd-boot + niri +
+Noctalia image. The aim of the work below is to make nabu easier to build,
+maintain and use day to day, staying close to NixOS' way of composing modules, boot
+management and configuration. These are directions and acceptance criteria, not
+features that already exist or committed release dates.
 
-- 改善 x86_64 → aarch64 的操作入口、依赖提示和错误定位。
-- 持续记录锁定 nixpkgs 与桌面组件的交叉构建问题，区分可求值、可构建、可启动。
-- 评估 ARM64 原生 builder 与二进制缓存，减少设备首次 rebuild 成本。
-- 在发布说明中记录 buildPlatform/hostPlatform、提交、lock、构建方式和真机验证范围。
+## Builds and cross compilation
 
-验收：干净环境可以按文档构建；失败有清晰定位信息；交叉镜像与原生 rebuild 的
-store 路径差异和资源成本有实际记录，而不是承诺跨平台缓存通用。
+- Improve the x86_64 → aarch64 entry points, dependency hints and error localisation.
+- Keep recording cross-build problems with the pinned nixpkgs and desktop
+  components, distinguishing "evaluates", "builds" and "boots".
+- Evaluate ARM64 native builders and binary caches to reduce the first on-device
+  rebuild cost.
+- Record `buildPlatform`/`hostPlatform`, commit, lock file, build method and the
+  scope of on-device validation in the release notes.
 
-## 系统配置与镜像体积
+Acceptance: a clean environment can build as documented; failures come with clear
+localisation; the store-path differences and resource cost between a cross-built
+image and a native rebuild are actually recorded, rather than promising that
+cross-platform caches are interchangeable.
 
-- 先记录压缩下载大小、未压缩 rootfs 大小和系统闭包大小，分析主要依赖来源。
-- 减少非必要软件包、固件或间接构建依赖，保留必要恢复工具和诊断能力。
-- 拆分公共硬件/启动模块与桌面选择，增加 TTY、niri + Noctalia、KDE 等独立配置。
-- 验证新增的 tmpfs root + Btrfs 镜像在平板上的冷启动、重启、扩容和日常更新。
-- 完善 Impermanence 持久化清单及恢复流程，记录实机验证范围。
+## System configuration and image size
 
-验收：每种对外提供的变体有真实 flake 输出、配套 ESP/rootfs、体积记录和验证范围。
-ext4 和 Btrfs 已有独立文件系统镜像构建后端与挂载配置，见[存储方案](storage.md)。
-Impermanence 也不等于自动备份或 generation 数据回滚，应单独说明恢复与持久化边界。
+- First record the compressed download size, the uncompressed rootfs size and the
+  system closure size, and analyse where the main dependencies come from.
+- Reduce unnecessary packages, firmware or indirect build dependencies while keeping
+  the necessary recovery tools and diagnostic ability.
+- Split the common hardware/boot modules from the desktop choice and add separate
+  TTY, niri + Noctalia and KDE configurations.
+- Validate cold boot, reboot, growth and routine updates of the new tmpfs root +
+  Btrfs image on the tablet.
+- Complete the Impermanence persistence list and recovery procedures, and record the
+  scope of on-device validation.
 
-## 设备适配与电源管理
+Acceptance: every variant offered publicly has real flake outputs, a matching
+ESP/rootfs, size records and a stated validation scope. ext4 and Btrfs already have
+separate filesystem-image build backends and mount configuration; see the
+[storage profile](storage.md) guide. Impermanence is also not the same as automatic
+backup or generation-based data rollback, so the boundaries of recovery and
+persistence should be documented separately.
 
-- 排查偶发启动失败，建立冷启动、热重启和显示接管的回归记录。
-- 验证重启后稳定 Wi-Fi MAC（已通过 SMBIOS 序列号派生解决，方案源自 TwinbornPlate75/linux-nabu）
-  对 DHCP 预留和网络准入的影响。
-- 实现实用的电源键行为：明确锁屏、熄屏、低功耗休眠和唤醒各自的动作。
-- 验证唤醒源、恢复显示、触摸/数位笔与网络恢复，测量真实待机功耗。
-- 推进相机与其余未验证硬件，评估更多内核选项和设备树调整。
-- 保持每个候选内核/驱动改动可回滚，避免一次修改大量无关参数。
+## Device support and power management
 
-验收：重复休眠/唤醒与启动测试有记录，功耗有测量，失败原因与适用硬件版本明确。
-单次成功、锁屏成功或内核选项打开均不等价于功能完成。
+- Investigate the occasional boot failures and build a regression record for cold
+  boots, warm reboots and display takeover.
+- Validate how the stable Wi-Fi MAC address after reboot (already solved by deriving
+  it from the SMBIOS serial, approach from TwinbornPlate75/linux-nabu) affects DHCP
+  reservations and network admission.
+- Implement usable power-key behaviour: define what locking, screen-off, low-power
+  suspend and wake-up each do.
+- Validate wake sources, display resume, touch/pen and network recovery, and measure
+  real standby power consumption.
+- Push the camera and the remaining unvalidated hardware, evaluating more kernel
+  options and device tree adjustments.
+- Keep every candidate kernel/driver change revertible and avoid changing a large
+  number of unrelated parameters at once.
 
-## CI 与发布设施
+Acceptance: repeated suspend/wake and boot tests are recorded, power is measured, and
+the failure cause and affected hardware version are clear. A single success, a
+successful lock, or having a kernel option enabled does not amount to a finished
+feature.
 
-- 建设 GitHub Actions：先做配置求值、文档链接、KDL 和脚本检查，再加入镜像构建。
-- 选择合适的 ARM64 原生 runner 或交叉构建环境，管理缓存、磁盘和构建时长。
-- 为计划中的各配置变体设置构建矩阵，记录哪些平台尚未支持。
-- 自动导出镜像、SHA256SUMS、压缩分卷、源码与 lock 信息，并校验重新合并后的产物。
-- 更新旧 QEMU smoke 脚本，使其测试独立内核/initrd 的现有产物。
-- 将真机回归与自动构建结果分别记录，明确发布是否经过实机验证。
+## CI and release infrastructure
 
-验收：PR 检查与 tag 发布有可追溯日志，下载文件能够完整重组并校验。
-QEMU 不模拟 nabu 的真实 UEFI、UFS、显示和电源路径，不能代替真机验收。
+- Build GitHub Actions in stages: first configuration evaluation, documentation
+  links, KDL and script checks, then image builds.
+- Choose a suitable ARM64 native runner or cross-build environment, and manage
+  caching, disk space and build duration.
+- Set up a build matrix for the planned configuration variants, recording which
+  platforms are not supported yet.
+- Automatically export images, `SHA256SUMS`, split archives, and source/lock
+  information, and verify the reassembled artifacts.
+- Update the old QEMU smoke script so it tests the current separate
+  kernel/initrd artifacts.
+- Record on-device regression results and automated build results separately, and
+  state clearly whether a release has been validated on hardware.
 
-## 文档与协作
+Acceptance: PR checks and tag releases have traceable logs, and the downloaded files
+can be reassembled and verified completely. QEMU does not emulate nabu's real UEFI,
+UFS, display or power paths and cannot replace on-device acceptance.
 
-- 同步英文/中文首页，维护安装、构建、更新、设备状态和架构说明。
-- 每次 release 更新功能状态、已知问题、资产名称、刷写目标与校验方式。
-- 为新变体补齐配置示例、迁移边界、回滚方法和测试记录。
-- 将历史排障笔记与当前操作说明分离，保留原作者和上游社区的贡献记录。
-- 逐步补齐详细指南的英文版本；当前详细指南以中文为主。
+## Documentation and collaboration
 
-参与方式见[贡献指南](../CONTRIBUTING.md)。
+- Keep the English and Chinese front pages in sync, and maintain the installation,
+  build, update, device-status and architecture documentation.
+- Update feature status, known issues, asset names, flash targets and verification
+  methods on every release.
+- Provide configuration examples, migration boundaries, rollback methods and test
+  records for new variants.
+- Keep historical troubleshooting notes separate from current instructions, and
+  preserve the contributions of the original author and the upstream community.
+- Complete the English versions of the detailed guides; all guides are now bilingual.
+
+See the [contribution guide](../CONTRIBUTING.md) (Chinese) for how to take part.
