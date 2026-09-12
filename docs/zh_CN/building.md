@@ -100,9 +100,50 @@ Nix 并行构建数，但较大的闭包或冷构建仍可能需要更大的 ARM
 导出空间，不能降低 Nix store 和镜像构建临时目录本身的空间需求。impermanent 任务会在
 临时 VM 中允许非特权 user namespace，以支持 Btrfs 镜像所有权设置，适配
 [Ubuntu 24.04 的 AppArmor 限制](https://documentation.ubuntu.com/release-notes/24.04/)。这两个流程生成构建
-产物；发布 release 和真机启动验证仍需单独完成。平台及 artifact 行为参见上游
+产物；发布 release 可使用下面的发布流程，真机启动验证仍需单独完成。平台及 artifact 行为参见上游
 [runner 说明](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 和 [artifact action](https://github.com/actions/upload-artifact)。
+
+## 构建并发布 Release
+
+在 Actions 中手动运行 **Build images and publish release**
+（[release-images.yml](../../.github/workflows/release-images.yml)）。它复用镜像工作流，
+以 ARM64 原生构建两套配套镜像并读取 `nix-nabu` 缓存；两套构建都成功后才执行发布。
+无需额外 PAT 或 Cachix 写 token，发布 job 使用仓库自带 `GITHUB_TOKEN` 的
+`contents: write` 权限。仓库规则必须允许该 token 创建对应的 release/tag。
+
+版本格式为 `vYYYY.MM.DD.RUN.ATTEMPT`，例如 `v2026.09.12.3.1`。日期取发布 job
+执行时的上海时区，后两段是此工作流的运行编号和重跑次数，允许同日多次发布。
+tag 指向本次运行的确切提交。附件先上传到草稿，全部成功后自动公开为最新 release；
+上传失败会保留草稿，重跑会使用新版本号，不覆盖旧版本或附件。仅重跑失败任务时，
+允许复用同一次运行中已经成功的另一套镜像。失败草稿可在 Releases 页面手动清理。
+
+Release 不上传整套 artifact ZIP；每个文件都是独立下载项：
+
+| 文件（以 ext4 为例） | 内容 |
+| --- | --- |
+| `ext4-nabu-esp.zip` | ESP 内的 EFI、loader、nixos 文件目录 |
+| `ext4-nabu-esp.image` | 可直接刷写的未压缩 ESP 镜像 |
+| `ext4-nabu-rootfs.image.zst.part-0000` 等 | rootfs 压缩分卷，每卷最多 1900 MiB |
+| `ext4-nabu-SHA256SUMS` / `ext4-nabu-SHA256SUMS.images` | 下载文件 / 原始镜像校验 |
+| `ext4-nabu-RESTORE.txt` / `ext4-nabu-BUILD-INFO.txt` | 还原说明 / 构建来源 |
+
+impermanent 使用 `impermanent-nabu-` 前缀，文件名互不冲突。ESP 随存储方案变化，
+必须下载同一版本、同一方案的配套文件。`.image` 与原 flake 的 `.img` 内容相同。
+rootfs 即使只有一卷也使用 `.part-0000`，按附件中的说明连接解压后再刷写。
+
+changelog 直接保存在发布工作流的 **Write release notes** 步骤，随发布提交进入 Git
+历史；每次发布前更新正文和比较链接中的基准 tag。本次正文依据
+`v0.1.0-alpha..73840aa` 的提交与当前设备状态整理。发布流程本身也列入了本次更新。
+只有版本、提交及链接由运行环境填充，不使用自动生成的 changelog。
+
+本地验证打包流程（含两套 release 附件的还原校验）：
+
+```sh
+bash tests/package-images.sh
+# 单独生成 ext4 release 附件，输出目录必须尚不存在：
+RELEASE_VARIANT=ext4 bash scripts/package-images.sh /path/to/esp-output /path/to/rootfs-output ./release-dist
+```
 
 存储布局、自定义持久化目录和无状态版本的使用说明见[存储方案](storage.md)。
 

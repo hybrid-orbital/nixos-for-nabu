@@ -2,12 +2,18 @@ name: Build and package images
 
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release:
+        description: Export separate release assets with storage-variant prefixes
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: images-${{ github.ref }}
+  group: images-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -63,7 +69,14 @@ jobs:
             --no-update-lock-file --print-build-logs --out-link result-image
 
       - name: Compress, split and verify images
+        env:
+          RELEASE_PACKAGING: ${{ inputs.release || false }}
         run: |
+          prefix=
+          if [[ "$RELEASE_PACKAGING" == true ]]; then
+            export RELEASE_VARIANT="$VARIANT"
+            prefix="$VARIANT-nabu-"
+          fi
           bash scripts/package-images.sh result-image result-image-1 dist
           {
             echo "commit=$GITHUB_SHA"
@@ -73,8 +86,8 @@ jobs:
             echo "rootfs=$(readlink -f result-image-1)"
             nix --version
             sha256sum flake.lock
-          } > dist/BUILD-INFO.txt
-          (cd dist && sha256sum BUILD-INFO.txt >> SHA256SUMS)
+          } > "dist/${prefix}BUILD-INFO.txt"
+          (cd dist && sha256sum "${prefix}BUILD-INFO.txt" >> "${prefix}SHA256SUMS")
 
       - uses: actions/upload-artifact@v7.0.1
         with:
@@ -89,7 +102,7 @@ jobs:
           {
             echo "### $VARIANT images"
             echo "Commit: $GITHUB_SHA"
-            echo 'Download the artifact and follow RESTORE.txt to verify and decompress it.'
+            echo 'Download the artifact and follow its RESTORE.txt file to verify and decompress it.'
             echo '```text'
             ls -lh dist
             echo '```'

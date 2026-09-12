@@ -113,10 +113,57 @@ large closure or cold build may still need a larger ARM64 runner. Packaging redu
 export space, not the Nix store or temporary space needed to build the image.
 The impermanent job allows unprivileged user namespaces in its disposable VM for
 Btrfs image ownership, accounting for [Ubuntu 24.04's AppArmor restriction](https://documentation.ubuntu.com/release-notes/24.04/).
-These workflows produce build artifacts; releases and on-device boot validation
-remain separate steps. See the upstream [runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+These workflows produce build artifacts; use the release workflow below to publish
+them. On-device boot validation remains separate. See the upstream [runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 and [artifact action](https://github.com/actions/upload-artifact) for platform and
 artifact behavior.
+
+## Build and publish a release
+
+Manually run **Build images and publish release**
+([release-images.yml](../.github/workflows/release-images.yml)) from Actions.
+It reuses the native ARM64 image workflow and `nix-nabu` cache, then publishes only
+after both storage variants succeed. No additional PAT or Cachix write token is
+needed: the publishing job uses `GITHUB_TOKEN` with `contents: write`. Repository
+rules must allow that token to create the release/tag.
+
+Versions use `vYYYY.MM.DD.RUN.ATTEMPT`, for example `v2026.09.12.3.1`. The date is
+the publishing job's date in Asia/Shanghai; the workflow run number and attempt
+allow multiple releases per day. The tag targets the exact workflow commit.
+Assets upload to a draft first; only a successful upload publishes it as the latest
+release. A failed upload leaves a draft. Reruns use a new version without replacing
+existing releases or assets, and can reuse a successful variant from an earlier
+attempt of the same run. Obsolete failed drafts can be removed from Releases.
+
+Every release asset is separately downloadable, without an enclosing artifact ZIP:
+
+| File (ext4 example) | Contents |
+| --- | --- |
+| `ext4-nabu-esp.zip` | EFI, loader and nixos directories from the ESP |
+| `ext4-nabu-esp.image` | Uncompressed, directly flashable ESP image |
+| `ext4-nabu-rootfs.image.zst.part-0000` etc. | Compressed rootfs parts, at most 1900 MiB each |
+| `ext4-nabu-SHA256SUMS` / `ext4-nabu-SHA256SUMS.images` | Download / raw image checksums |
+| `ext4-nabu-RESTORE.txt` / `ext4-nabu-BUILD-INFO.txt` | Restore instructions / build provenance |
+
+The other variant uses the `impermanent-nabu-` prefix to avoid name collisions.
+Download matching files from the same release and storage variant: their ESPs
+differ. `.image` files contain the same bytes as the original flake `.img` files.
+Even a single rootfs part uses `.part-0000`; concatenate and decompress following
+the shipped instructions before flashing.
+
+The changelog is hardcoded in the workflow's **Write release notes** step, so its
+history accompanies each release commit. Update the prose and comparison base tag
+before each release. The initial notes cover `v0.1.0-alpha..73840aa`, current device
+status, and this release workflow. Only version, commit and links are filled in at
+runtime; automatic changelog generation is disabled.
+
+Test packaging locally, including both variants' release restore instructions:
+
+```sh
+bash tests/package-images.sh
+# Export ext4 release assets into a directory that does not yet exist:
+RELEASE_VARIANT=ext4 bash scripts/package-images.sh /path/to/esp-output /path/to/rootfs-output ./release-dist
+```
 
 See the [storage profile](storage.md) guide for the storage layout, custom
 persistent directories and how to use the impermanent variant.

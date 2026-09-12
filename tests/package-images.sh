@@ -46,6 +46,33 @@ bash "$repo/scripts/package-images.sh" "$tmp/esp" "$tmp/raw" "$tmp/single"
 parts=("$tmp/single/"*.part-*)
 [[ ${#parts[@]} -eq 1 && ${parts[0]} == *.part-0000 ]]
 
+# Release assets stay separate and both variants can share a release directory.
+mkdir "$tmp/release-assets"
+for variant in ext4 impermanent; do
+  kind=raw
+  if [[ "$variant" == impermanent ]]; then kind=compressed; fi
+  out="$tmp/release-$variant"
+  RELEASE_VARIANT="$variant" SPLIT_SIZE=8K bash "$repo/scripts/package-images.sh" \
+    "$tmp/esp" "$tmp/$kind" "$out"
+  prefix="$variant-nabu-"
+  [[ -f "$out/${prefix}esp.zip" && -f "$out/${prefix}esp.image" ]]
+  [[ ! -e "$out/esp.img.zst" && ! -e "$out/efi-files.zip" ]]
+  cmp "$out/${prefix}esp.zip" "$tmp/esp/efi-files.zip"
+  mv "$out/"* "$tmp/release-assets/"
+  (
+    cd "$tmp/release-assets"
+    # Run the actual instructions shipped to users, including both manifests.
+    sed -n 's/^  //p' "${prefix}RESTORE.txt" | bash -euo pipefail
+    cmp "${prefix}rootfs.image" "$tmp/raw/nabu-rootfs.ext4.img"
+    cmp "${prefix}esp.image" "$tmp/esp/esp.img"
+    parts=("${prefix}rootfs.image.zst.part-"*)
+    [[ ${#parts[@]} -gt 1 ]]
+    for part in "${parts[@]}"; do
+      [[ $(stat -c %s "$part") -le 8192 ]]
+    done
+  )
+done
+
 # Ambiguous inputs and invalid split sizes must fail.
 cp "$tmp/raw/nabu-rootfs.ext4.img" "$tmp/raw/nabu-rootfs.btrfs.img"
 if bash "$repo/scripts/package-images.sh" "$tmp/esp" "$tmp/raw" "$tmp/ambiguous"; then

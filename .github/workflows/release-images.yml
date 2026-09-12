@@ -1,0 +1,138 @@
+name: Build images and publish release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-images
+  cancel-in-progress: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-images.yml
+    with:
+      release: true
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          # A failed-job rerun may reuse a successful variant from an earlier attempt.
+          pattern: nabu-*-${{ github.sha }}-*
+          path: artifacts
+
+      - name: Collect and verify separate release assets
+        run: |
+          mkdir assets
+          for variant in ext4 impermanent; do
+            # Pick the newest available attempt of each variant in this run.
+            source=$(find artifacts -mindepth 1 -maxdepth 1 -type d \
+              -name "nabu-$variant-$GITHUB_SHA-*" | sort -V | tail -n 1)
+            test -n "$source"
+            prefix="$variant-nabu-"
+            (
+              cd "$source"
+              sha256sum -c "${prefix}SHA256SUMS"
+              grep -Fx "commit=$GITHUB_SHA" "${prefix}BUILD-INFO.txt"
+              grep -Fx "variant=$variant" "${prefix}BUILD-INFO.txt"
+              test -s "${prefix}esp.zip"
+              test -s "${prefix}esp.image"
+              test -s "${prefix}rootfs.image.zst.part-0000"
+            )
+            mv "$source/$prefix"* assets/
+          done
+          # Each file is an individual GitHub Release asset (limit: 2 GiB).
+          for asset in assets/*; do
+            test "$(stat -c %s "$asset")" -lt 2147483648
+          done
+
+      - name: Set date-based version
+        id: version
+        run: |
+          tag="v$(TZ=Asia/Shanghai date +%Y.%m.%d).${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # Update this changelog in Git before each release; do not auto-generate it.
+      - name: Write release notes
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## Changes
+
+          Highlights since `v0.1.0-alpha`:
+
+          - Add an impermanent storage variant with a tmpfs root and persistent Btrfs subvolumes for the Nix store, home directories and declared system state. Both this variant and the traditional ext4 variant have matching ESP/rootfs images.
+          - Unify the image builders and improve first-boot Nix database registration, filesystem growth and storage tests. Btrfs images use zstd compression for the preinstalled closure and shrink unused filesystem space.
+          - Give each storage variant its own host name so `nixos-rebuild --flake .` selects the installed variant without an explicit configuration name.
+          - Fix intermittent panel wake failures after screen-off, adjust Adreno GPU suspend handling, and backport the qcom-geni serial suspend fix to prevent the Bluetooth UART from immediately waking the device from s2idle.
+          - Add stable Wi-Fi MAC addresses across reboots for ath10k and backport recovery checks to address Wi-Fi hangs after idle.
+          - Add touchpad-emulator for touchscreen-as-touchpad input with corrected landscape rotation. Improve touch coordinate mapping on the login screen and brightness configuration for the internal display.
+          - Replace the full linux-firmware package with a tailored Xiaomi Pad 5 firmware subset to reduce space used by unrelated firmware.
+          - Integrate the nix-nabu Cachix cache and add workflows for native ARM64 kernel caching, image builds, split-archive verification and releases with date-based versions.
+          - Reorganise the English and Chinese documentation and expand the installation, storage, desktop, build and device-status guides.
+
+          ## Downloads and restoration
+
+          Files use the `ext4-nabu-` or `impermanent-nabu-` prefix for their storage variant.
+          Always use matching ESP and rootfs images from the same release and storage variant.
+
+          - `*-esp.zip`: the EFI, loader and nixos directories from the ESP, for manual deployment.
+          - `*-esp.image`: the complete, uncompressed ESP filesystem image, ready to flash to the `esp` partition.
+          - `*-rootfs.image.zst.part-*`: zstd-compressed rootfs parts, at most 1900 MiB each. Download all parts for your variant, then concatenate and decompress them into `*-rootfs.image`.
+          - `*-SHA256SUMS`, `*-SHA256SUMS.images`, `*-RESTORE.txt` and `*-BUILD-INFO.txt`: download checksums, raw image checksums, restore commands and build provenance.
+
+          For ext4, run the following in the directory containing the downloaded files:
+
+          ```sh
+          sha256sum -c ext4-nabu-SHA256SUMS
+          cat ext4-nabu-rootfs.image.zst.part-* | zstd -d --sparse -o ext4-nabu-rootfs.image
+          sha256sum -c ext4-nabu-SHA256SUMS.images
+          ```
+
+          For the impermanent variant, replace `ext4-nabu-` with `impermanent-nabu-`.
+          The checksum manifest covers every asset for the selected variant, so download them all.
+          Flash the ESP image to `esp` and the rootfs image to `linux`. The ZIP is not a partition
+          image, and individual archive parts cannot be flashed. Reflashing the rootfs overwrites
+          existing data; consult the installation and usage guides for routine system updates.
+
+          ## Device status
+
+          The maintainer has reported on-device verification of the s2idle suspend fix.
+          The camera remains unavailable. Intermittent boot failures, power-key behaviour,
+          display recovery and standby power consumption still need further tracking.
+          Full on-device regression coverage for the impermanent variant remains pending.
+          A successful CI build does not establish on-device validation of these release images.
+          EOF
+          {
+            # Markdown backticks are literal, not shell command substitutions.
+            # shellcheck disable=SC2016
+            printf '\nVersion: `%s` (date in Asia/Shanghai).\n' "$RELEASE_TAG"
+            printf '\nBuild commit: [%s](https://github.com/%s/commit/%s)\n' "$GITHUB_SHA" "$GH_REPO" "$GITHUB_SHA"
+            printf '\n[Full changelog](https://github.com/%s/compare/v0.1.0-alpha...%s)\n' "$GH_REPO" "$GITHUB_SHA"
+            printf '\n[Installation guide](https://github.com/%s/blob/%s/docs/installation.md)\n' "$GH_REPO" "$GITHUB_SHA"
+          } >> release-notes.md
+
+      - name: Upload all assets, then publish
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          # Do not expose a partially uploaded release. A failed upload leaves a draft.
+          # No --clobber: existing releases and assets must not be overwritten.
+          gh release create "$RELEASE_TAG" assets/* \
+            --target "$GITHUB_SHA" --title "Nabu NixOS $RELEASE_TAG" \
+            --notes-file release-notes.md --draft
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+          printf 'Published: https://github.com/%s/releases/tag/%s\n' \
+            "$GH_REPO" "$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

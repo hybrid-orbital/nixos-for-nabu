@@ -39,4 +39,5 @@
 
 特别检查 ESP 刷入 `esp`，不是 `boot`。当前 alpha release 的旧说明存在这个笔误，
 纠正说明见[安装文档](docs/zh_CN/installation.md#刷写到现有分区)。
-GitHub Actions 已支持手动构建、校验和打包材料生成；release 发布与实机验证仍需独立完成和记录。
+GitHub Actions 已支持手动构建、校验、分卷打包和[日期版本 release 发布](docs/zh_CN/building.md#构建并发布-release)。
+发布前更新 `.github/workflows/release-images.yml` 内的 changelog 及比较基准 tag；实机验证仍需独立完成和记录。
