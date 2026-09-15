@@ -14,8 +14,15 @@ jobs:
   kernel:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        # One entry per kernel in pkgs/kernel/default.nix; the flake exposes
+        # each of them as .#nabu-kernel-<name>.
+        kernel: [sm8150-fork, mainline-latest]
     env:
       CACHIX_CACHE_NAME: nix-nabu
+      KERNEL: ${{ matrix.kernel }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -47,9 +54,9 @@ jobs:
           # Push explicitly below: include cache hits and surface upload failures.
           skipPush: true
 
-      - name: Build native ARM64 kernel
+      - name: Build native ARM64 kernel (${{ matrix.kernel }})
         run: |
-          nix build .#nixosConfigurations.nabu.config.system.build.kernel \
+          nix build ".#nabu-kernel-$KERNEL" \
             --no-update-lock-file --print-build-logs --out-link result-kernel
 
       - name: Push kernel closure to Cachix
@@ -59,8 +66,9 @@ jobs:
           kernel=$(readlink -f result-kernel)
           cachix push "$CACHIX_CACHE_NAME" "$kernel"
           {
-            echo '### Kernel cached'
+            echo "### Kernel cached: $KERNEL"
             echo "Commit: $GITHUB_SHA"
             echo "Store path: $kernel"
+            echo "Kernel: $KERNEL"
             echo "Cache: https://$CACHIX_CACHE_NAME.cachix.org"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,44 @@
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 8014b9f82..d526adeba 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -1,5 +1,4 @@
+ List of maintainers
+-===================
+ 
+ Descriptions of section entries and preferred order
+ ---------------------------------------------------
+@@ -22318,11 +22317,13 @@ F:	drivers/media/platform/qcom
+ F:	include/dt-bindings/media/*qcom*
+ 
+ QUALCOMM SMB CHARGER DRIVER
++QUALCOMM SMB2 CHARGER DRIVER
+ M:	Casey Connolly <casey.connolly@linaro.org>
+ L:	linux-arm-msm@vger.kernel.org
+ S:	Maintained
+ F:	Documentation/devicetree/bindings/power/supply/qcom,pmi8998-charger.yaml
+ F:	drivers/power/supply/qcom_smbx.c
++F:	drivers/power/supply/qcom_smbx_charger.c
+ 
+ QUALCOMM PPE DRIVER
+ M:	Luo Jie <jie.luo@oss.qualcomm.com>
+@@ -29844,4 +29845,4 @@ L:	linux-kernel@vger.kernel.org
+ S:	Buried alive in reporters
+ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+ F:	*
+-F:	*/
++F:	*/
+\ No newline at end of file
+diff --git a/drivers/of/property.c b/drivers/of/property.c
+index 72cf12907..cd1283649 100644
+--- a/drivers/of/property.c
++++ b/drivers/of/property.c
+@@ -1535,7 +1535,7 @@ static struct device_node *parse_remote_endpoint(struct device_node *np,
+ 	if (index > 0 || strcmp(prop_name, "remote-endpoint"))
+ 		return NULL;
+ 
+-	return of_graph_get_remote_port_parent(np);
++	return of_graph_get_remote_port(np);
+ }
+ 
+ static const struct supplier_bindings of_supplier_bindings[] = {

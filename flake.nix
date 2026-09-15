@@ -31,7 +31,7 @@
         impermanent = ./nixos/storage/impermanent.nix;
       };
       mkSystem =
-        variant: buildSystem:
+        variant: buildSystem: kernelName:
         lib.nixosSystem {
           modules = [
             { nixpkgs.overlays = [ (import ./pkgs) ]; }
@@ -40,7 +40,10 @@
             variants.${variant}
           ]
           ++ lib.optional (variant == "impermanent") impermanence.nixosModules.impermanence
-          ++ lib.optional (buildSystem != null) { nixpkgs.buildPlatform.system = buildSystem; };
+          ++ lib.optional (buildSystem != null) { nixpkgs.buildPlatform.system = buildSystem; }
+          # Pinned explicitly by the per-kernel package outputs below; `null`
+          # keeps the default from nixos/hardware-nabu.nix.
+          ++ lib.optional (kernelName != null) { nabu.kernel.name = kernelName; };
         };
     in
     {
@@ -58,7 +61,7 @@
       nixosConfigurations =
         lib.mapAttrs' (variant: _: {
           name = configName variant;
-          value = mkSystem variant null;
+          value = mkSystem variant null null;
         }) variants
         // {
           nabu = self.nixosConfigurations.ext4-nabu;
@@ -67,17 +70,39 @@
       packages = lib.genAttrs [ "x86_64-linux" "aarch64-linux" ] (
         system:
         let
+          # Kernel names come from pkgs/kernel/default.nix; only the attribute
+          # names are needed here, so the registry stays unevaluated.
+          kernelNames = builtins.attrNames (import ./pkgs/kernel {
+            callPackage = nixpkgs.legacyPackages.${system}.callPackage;
+          });
+
           configs = lib.mapAttrs (
             variant: _:
             if system == "aarch64-linux" then
               self.nixosConfigurations."${variant}-nabu".config
             else
-              (mkSystem variant system).config
+              (mkSystem variant system null).config
           ) variants;
           images = lib.concatMapAttrs (variant: config: {
             "${variant}-nabu-esp" = config.system.build.esp-image;
             "${variant}-nabu-rootfs" = config.system.build.rootfs-image;
           }) configs;
+
+          # One kernel output per entry in pkgs/kernel/default.nix, so the CI
+          # workflow can build and cache any of them by name.  These are the
+          # same derivations the system uses (`boot.kernelPackages.kernel`).
+          kernelFor =
+            kernelName:
+            if system == "aarch64-linux" then
+              # Reuse the flake's configuration and only flip the kernel
+              # selection, so the default kernel keeps its existing store path.
+              (
+                self.nixosConfigurations.ext4-nabu.extendModules {
+                  modules = [ { nabu.kernel.name = kernelName; } ];
+                }
+              ).config.system.build.kernel
+            else
+              (mkSystem "ext4" system kernelName).config.system.build.kernel;
         in
         images
         // {
@@ -87,6 +112,12 @@
           nabu-kernel = configs.ext4.system.build.kernel;
           default = images.ext4-nabu-esp;
         }
+        // lib.listToAttrs (
+          map (kernelName: {
+            name = "nabu-kernel-${kernelName}";
+            value = kernelFor kernelName;
+          }) kernelNames
+        )
       );
     };
 }

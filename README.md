@@ -57,7 +57,7 @@ regression testing of the impermanent variant remains pending.
 
 The random Wi-Fi MAC address across reboots is now resolved: the generic
 board-2.bin carries no MAC, so a kernel patch
-(`pkgs/kernel/patches/0002-nabu-ath10k-mac-address.patch`) derives a stable
+(`pkgs/kernel/sm8150-fork/patches/0002-nabu-ath10k-mac-address.patch`) derives a stable
 locally-administered address from the SMBIOS board serial, overridable with the
 `ath10k_core.macaddr=` module parameter. The approach comes from
 [TwinbornPlate75/linux-nabu](https://github.com/TwinbornPlate75/linux-nabu).
@@ -73,7 +73,7 @@ confirmed on hardware.
 - **Fix**: backport upstream `d0cd9c8d0fd5` ("serial: qcom-geni: add force
   suspend/resume to system sleep callbacks"), which forces the runtime suspend
   from the system-sleep callbacks; patch:
-  `pkgs/kernel/patches/0005-qcom-geni-serial-force-suspend-system-sleep.patch`.
+  `pkgs/kernel/sm8150-fork/patches/0005-qcom-geni-serial-force-suspend-system-sleep.patch`.
 - **Credit**: upstream author **Praveen Talari** (Qualcomm), merged via tty-next
   for v6.18-rc4 and absent from 6.17.y.
 - **Caveats**: this is a backport onto the 6.17 branch. Bluetooth operation and the
@@ -106,7 +106,7 @@ identified, upstream fix backported, still under long-term observation.
 - **Fix**: backport upstream `f35a07a4842a` ("wifi: ath10k: move recovery check
   logic into a new work"), which moves the check to its own workqueue and cancels
   it in `ath10k_stop()`; patch:
-  `pkgs/kernel/patches/0004-nabu-ath10k-recovery-check-workqueue.patch`.
+  `pkgs/kernel/sm8150-fork/patches/0004-nabu-ath10k-recovery-check-workqueue.patch`.
 - **Credit**: upstream author **Kang Yang** (Qualcomm). The firmware version is
   unrelated (firmware is loaded via TQFTP and is already HL 3.2.0).
 - **Caveats**: the backport has not seen a long enough observation period yet. If
@@ -312,8 +312,11 @@ nix.settings.extra-trusted-public-keys = [
 On Linux with Nix and flakes enabled, check out the repository and run:
 
 ```sh
-# Kernel (the second command always selects the native ARM64 configuration)
+# Kernels (see pkgs/kernel/README.md; the second command always selects the
+# native ARM64 configuration)
 nix build .#nabu-kernel
+nix build .#nabu-kernel-sm8150-fork        # default: pinned sm8150-mainline fork
+nix build .#nabu-kernel-mainline-latest    # nixpkgs linux_latest + nabu patches
 nix build .#nixosConfigurations.nabu.config.system.build.kernel
 
 # ext4 ESP files and image, and rootfs image
@@ -401,7 +404,7 @@ services and desktops:
 
 ### Kernel patch sources
 
-The changes in `pkgs/kernel/patches/` include upstream backports and local
+The changes in `pkgs/kernel/sm8150-fork/patches/` include upstream backports and local
 adaptations. Verified sources are listed below:
 
 - **`0001-nabu-match-fedora-runtime-fixes.patch`**: a combined patch introduced by

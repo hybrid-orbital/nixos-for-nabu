@@ -30,7 +30,7 @@
 不是完成的电源管理方案。锁屏、屏幕关闭、低功耗休眠、恢复显示和解锁应分别测试。
 
 跨重启随机 Wi-Fi MAC 的问题已解决：通用 board-2.bin 不含 MAC，内核补丁
-（`pkgs/kernel/patches/0002-nabu-ath10k-mac-address.patch`）从 SMBIOS 主板序列号派生
+（`pkgs/kernel/sm8150-fork/patches/0002-nabu-ath10k-mac-address.patch`）从 SMBIOS 主板序列号派生
 稳定的本地管理地址，必要时可用 `ath10k_core.macaddr=` 模块参数覆盖，方案源自
 [TwinbornPlate75/linux-nabu](https://github.com/TwinbornPlate75/linux-nabu)。
 
@@ -44,7 +44,7 @@ nabu 的 WCN3991 蓝牙 UART（`uart13` / `c8c000.serial`，别名 `hsuart0`）�
 修复回移自上游提交 `d0cd9c8d0fd5`（"serial: qcom-geni: add force suspend/resume to
 system sleep callbacks"，作者 **Praveen Talari** `<praveen.talari@oss.qualcomm.com>`，
 经 tty-next 合入 v6.18-rc4，6.17.y 中没有该修复），落在
-`pkgs/kernel/patches/0005-qcom-geni-serial-force-suspend-system-sleep.patch`；补丁保留了
+`pkgs/kernel/sm8150-fork/patches/0005-qcom-geni-serial-force-suspend-system-sleep.patch`；补丁保留了
 上游的作者、提交信息与 sign-off 链。蓝牙工作与唤醒能力均保持不变，仍待补充的是电源键、
 自动挂起、恢复显示与待机功耗的记录。
 

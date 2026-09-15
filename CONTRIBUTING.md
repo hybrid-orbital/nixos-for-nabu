@@ -18,6 +18,14 @@
 - 引导/镜像：构建配套 ESP 与 rootfs，记录平台、提交、产物 hash，并验证首次启动和后续 rebuild。
 - 内核/电源：保留可启动旧代，分别记录冷启动、热重启、输入、显示与休眠恢复。
 
+内核放在 `pkgs/kernel/<name>/`，各版本互不影响：目录内的 `patches/`、`configs/`
+和 `default.nix` 组成一个自包含的包，再在 `pkgs/kernel/default.nix` 登记一次，
+overlay、`.#nabu-kernel-<name>` 输出、`nabu.kernel.name` 选项和 CI 矩阵都会
+自动包含它；新增或 rebase 的步骤见 [pkgs/kernel/README.md](pkgs/kernel/README.md)。
+检查内核补丁不需要构建系统闭包：`nix build .#nabu-kernel-<name>` 会应用补丁、
+生成 `.config`、编译内核与设备树，并用 `configs/required-nabu.config` 断言
+关键选项没有被改掉。
+
 明确写出“只求值”“构建成功”“QEMU 验证”或“真机验证”，不要混用。
 当前提供[手动内核和镜像 CI](docs/zh_CN/building.md#手动-github-actions-构建)，
 旧 `scripts/qemu-smoke.sh` 尚未适配 systemd-boot 产物。

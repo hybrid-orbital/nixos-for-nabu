@@ -17,7 +17,8 @@
 | `packages.<system>.impermanent-nabu-{esp,rootfs}` | 无状态配置的配套 ESP 和 Btrfs 镜像 |
 | `packages.<system>.nabu-esp` | `esp.img` 和 `efi-files.zip` |
 | `packages.<system>.nabu-rootfs` | 默认不压缩的 `nabu-rootfs.ext4.img` |
-| `packages.<system>.nabu-kernel` | sm8150 内核 |
+| `packages.<system>.nabu-kernel` | 默认内核（`nabu-kernel-sm8150-fork`） |
+| `packages.<system>.nabu-kernel-<name>` | `pkgs/kernel/default.nix` 中每个内核对应一个输出 |
 | `packages.<system>.default` | `nabu-esp` |
 
 `<system>` 支持 `x86_64-linux` 和 `aarch64-linux`。当前没有 `nabu-uki`、
@@ -26,6 +27,28 @@
 ext4 系统的主机名是 `nabu`（`ext4-nabu` 的别名），impermanent 系统是
 `impermanent-nabu`；两者都是 flake 的键或别名，因此 `sudo nixos-rebuild switch
 --flake .` 会按已安装的存储方案自动选中对应配置，无需手写 `#hostname`。
+
+## 内核
+
+每个内核都放在 `pkgs/kernel/` 下自己的目录里，并在 `pkgs/kernel/default.nix`
+中登记一次；目录结构和新增版本的方式见
+[该目录的 README](../pkgs/kernel/README.md)。配置通过名称选择内核：
+
+```sh
+# 只构建内核，不构建系统闭包
+nix build .#nabu-kernel-sm8150-fork
+nix build .#nabu-kernel-mainline-latest
+
+# 用指定内核构建系统（以及配套 ESP/rootfs）
+nix build .#ext4-nabu-esp
+nixos-rebuild build --flake .#ext4-nabu --option nabu.kernel.name mainline-latest
+```
+
+`sm8150-fork`（固定到 sm8150-mainline 的下游树）是默认内核，也是当前实机已验证的
+内核；`mainline-latest` 是 nixpkgs 的 `linux_latest` 加上重新 rebase 的下游 nabu
+补丁，作为下一个内核版本的候选，需要先在实机上验证再替换 fork。只构建内核即可
+检查补丁 rebase：设备树和必需要求（`configs/required-nabu.config`）都会在该构建中
+被校验。
 
 ## 构建配套镜像
 
@@ -60,8 +83,8 @@ CI 构建可使用下面的手动工作流。
 工作流文件进入默认分支后，Actions 页面会出现两个 `workflow_dispatch` 工作流。
 两次运行请选择相同分支/tag，并确保对应提交没有变化：
 
-1. **Build kernel and push to Cachix** 构建
-   `.#nixosConfigurations.nabu.config.system.build.kernel`，并显式上传内核闭包至
+1. **Build kernel and push to Cachix** 构建 `pkgs/kernel/default.nix` 中的每个内核
+   （`.#nabu-kernel-<name>`，每个内核一个矩阵任务），并显式上传各自的闭包至
    `nix-nabu`。首次运行前，在仓库 Actions secrets 中设置 `CACHIX_AUTH_TOKEN`，
    token 需要该缓存的写权限。缺少凭据或上传失败会使任务失败，即使内核已经命中缓存。
 2. **Build and package images** 按 ext4、impermanent 两个独立任务构建

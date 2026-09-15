@@ -8,18 +8,33 @@
 # PARTLABEL=esp.
 {
   config,
+  lib,
   pkgs,
   ...
 }:
 
 {
+  options.nabu.kernel.name = lib.mkOption {
+    type = lib.types.enum (builtins.attrNames pkgs.kernels);
+    default = "sm8150-fork";
+    description = ''
+      Kernel to build the device with.  See pkgs/kernel/default.nix for the
+      available names: `sm8150-fork` is the pinned sm8150-mainline fork,
+      `mainline-latest` is nixpkgs' linux_latest plus the downstream nabu
+      patches (the kernel under test for the next kernel version).
+    '';
+  };
+
+  config = {
   # == Platform ==============================================================
   nixpkgs.hostPlatform = "aarch64-linux";
   nixpkgs.flake.setNixPath = false;
   nixpkgs.flake.setFlakeRegistry = false;
 
   # == Kernel =================================================================
-  boot.kernelPackages = pkgs.linuxKernel.packagesFor pkgs.kernel-sm8150;
+  # Select with `nabu.kernel.name`; both kernels build the same device tree
+  # (qcom/sm8150-xiaomi-nabu.dtb, see nixos/boot.nix).
+  boot.kernelPackages = pkgs.linuxKernel.packagesFor pkgs.kernels.${config.nabu.kernel.name};
   # Root mounts are generated from the selected storage profile.
   boot.kernelParams = [
     "rw"
@@ -232,7 +247,7 @@
   networking.wireless.enable = false; # avoid wpa_supplicant conflict
 
   # The generic board-2.bin carries no MAC, so the kernel patch
-  # (pkgs/kernel/patches/0002-nabu-ath10k-mac-address.patch) derives a stable
+  # (pkgs/kernel/sm8150-fork/patches/0002-nabu-ath10k-mac-address.patch) derives a stable
   # locally-administered address from the SMBIOS board serial. If the boot
   # firmware exposes no usable serial (or a fixed MAC is required, e.g. for a
   # DHCP reservation), override it here with the per-device address:
@@ -250,4 +265,5 @@
 
   # == Power ==================================================================
   powerManagement.enable = true;
+  };
 }

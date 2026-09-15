@@ -37,7 +37,7 @@ be tested separately.
 
 The random Wi-Fi MAC address across reboots is resolved: the generic `board-2.bin`
 carries no MAC, so a kernel patch
-(`pkgs/kernel/patches/0002-nabu-ath10k-mac-address.patch`) derives a stable
+(`pkgs/kernel/sm8150-fork/patches/0002-nabu-ath10k-mac-address.patch`) derives a stable
 locally-administered address from the SMBIOS board serial, overridable with the
 `ath10k_core.macaddr=` module parameter. The approach comes from
 [TwinbornPlate75/linux-nabu](https://github.com/TwinbornPlate75/linux-nabu).
@@ -55,7 +55,7 @@ system resumes as soon as it has entered suspend-to-idle. The fix backports
 upstream commit `d0cd9c8d0fd5` ("serial: qcom-geni: add force suspend/resume to
 system sleep callbacks" by **Praveen Talari** `<praveen.talari@oss.qualcomm.com>`,
 merged via tty-next for v6.18-rc4 and absent from 6.17.y) as
-`pkgs/kernel/patches/0005-qcom-geni-serial-force-suspend-system-sleep.patch`; the
+`pkgs/kernel/sm8150-fork/patches/0005-qcom-geni-serial-force-suspend-system-sleep.patch`; the
 patch keeps the upstream author, commit message and sign-off chain. Bluetooth
 operation and the wake capability are unchanged; what is still missing is a record
 for the power key, auto-suspend, display resume and standby power.

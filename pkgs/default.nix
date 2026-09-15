@@ -1,9 +1,21 @@
 # Custom package set for nixos-for-nabu.
 # Exposed as an overlay so `pkgs.kernel-sm8150` etc. work inside the
 # NixOS configuration.
-final: prev: {
-  # Mainline sm8150 kernel (6.17) with nabu support
-  kernel-sm8150 = final.callPackage ./kernel { };
+final: prev:
+let
+  # Every kernel this project ships, keyed by the name used in
+  # `nabu.kernel.name` (see pkgs/kernel/default.nix).
+  kernels = final.callPackage ./kernel { };
+in
+{
+  inherit kernels;
+
+  # Pinned sm8150-mainline fork (6.17) with nabu support: the default kernel.
+  kernel-sm8150 = kernels."sm8150-fork";
+
+  # nixpkgs linux_latest + the downstream nabu patches: the kernel under test
+  # for the next kernel version.
+  kernel-nabu-mainline = kernels."mainline-latest";
 
   # Qualcomm protection domain mapper (missing from nixpkgs)
   pd-mapper = final.callPackage ./pd-mapper.nix { };

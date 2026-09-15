@@ -45,7 +45,7 @@ CI 构建成功不等于实机验证；无状态版本的完整实机回归测�
 ### 已修复或已缓解
 
 跨重启随机 Wi-Fi MAC 的问题已解决：通用 board-2.bin 不含 MAC，内核补丁
-（`pkgs/kernel/patches/0002-nabu-ath10k-mac-address.patch`）从 SMBIOS 主板序列号派生
+（`pkgs/kernel/sm8150-fork/patches/0002-nabu-ath10k-mac-address.patch`）从 SMBIOS 主板序列号派生
 稳定的本地管理地址，必要时可用 `ath10k_core.macaddr=` 模块参数覆盖。方案源自
 [TwinbornPlate75/linux-nabu](https://github.com/TwinbornPlate75/linux-nabu)。
 
@@ -57,7 +57,7 @@ CI 构建成功不等于实机验证；无状态版本的完整实机回归测�
   瞬间就触发。
 - **解决方案**：回移上游提交 `d0cd9c8d0fd5`（"serial: qcom-geni: add force suspend/resume
   to system sleep callbacks"），让系统睡眠回调强制走 runtime suspend；补丁见
-  `pkgs/kernel/patches/0005-qcom-geni-serial-force-suspend-system-sleep.patch`。
+  `pkgs/kernel/sm8150-fork/patches/0005-qcom-geni-serial-force-suspend-system-sleep.patch`。
 - **贡献来源**：上游作者 **Praveen Talari**（Qualcomm），经 tty-next 合入 v6.18-rc4，
   6.17.y 中没有该修复。
 - **仍需注意**：这是针对 6.17 分支的回移；蓝牙工作与唤醒能力保持不变，后续合并上游
@@ -83,7 +83,7 @@ nabu 的 WCN3991 蓝牙 UART 是常开 serdev，系统挂起时 runtime PM 引�
   `WARN_ON` 只是症状而非根因）。
 - **解决方案**：回移上游提交 `f35a07a4842a`（"wifi: ath10k: move recovery check logic into
   a new work"），把检查移到独立工作队列并在 `ath10k_stop()` 中取消；补丁见
-  `pkgs/kernel/patches/0004-nabu-ath10k-recovery-check-workqueue.patch`。
+  `pkgs/kernel/sm8150-fork/patches/0004-nabu-ath10k-recovery-check-workqueue.patch`。
 - **贡献来源**：上游作者 **Kang Yang**（Qualcomm）。与固件版本无关（经 TQFTP 加载的固件
   已是较新的 HL 3.2.0）。
 - **仍需注意**：该回移尚未经历足够长的实机观察；若再次卡死，需要让驱动重新 probe
@@ -256,8 +256,10 @@ nix.settings.extra-trusted-public-keys = [
 在启用了 flakes 的 Linux/Nix 环境，检出仓库，从仓库目录运行：
 
 ```sh
-# 内核（第二条命令始终选择原生 ARM64 配置）
+# 内核（见 pkgs/kernel/README.md；第二条命令始终选择原生 ARM64 配置）
 nix build .#nabu-kernel
+nix build .#nabu-kernel-sm8150-fork        # 默认：固定到 sm8150-mainline 的下游内核
+nix build .#nabu-kernel-mainline-latest    # nixpkgs linux_latest + nabu 补丁
 nix build .#nixosConfigurations.nabu.config.system.build.kernel
 
 # ext4 的 ESP 文件与镜像、rootfs 镜像
@@ -339,7 +341,7 @@ nabu 上的 Linux 也依赖多个社区持续推进固件、内核、设备服�
 
 ### 内核补丁来源
 
-`pkgs/kernel/patches/` 下的改动包含上游回移和本地适配，已核实的来源如下：
+`pkgs/kernel/sm8150-fork/patches/` 下的改动包含上游回移和本地适配，已核实的来源如下：
 
 - **`0001-nabu-match-fedora-runtime-fixes.patch`**：本仓库提交
   [`f1a0391`](https://github.com/hybrid-orbital/nixos-for-nabu/commit/f1a039140353fad1d336751e42c95a530056e5ba)

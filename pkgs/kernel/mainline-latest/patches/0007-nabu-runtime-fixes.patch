@@ -1,0 +1,203 @@
+diff --git a/drivers/gpu/drm/msm/adreno/adreno_device.c b/drivers/gpu/drm/msm/adreno/adreno_device.c
+index 7f20320ef..a2f40b226 100644
+--- a/drivers/gpu/drm/msm/adreno/adreno_device.c
++++ b/drivers/gpu/drm/msm/adreno/adreno_device.c
+@@ -376,13 +376,20 @@ static int adreno_system_suspend(struct device *dev)
+ 				       gpu->active_submits == 0,
+ 				       msecs_to_jiffies(1000));
+ 	if (remaining == 0) {
++		/*
++		 * A GPU that failed to quiesce in time must not
++		 * veto system sleep: the s2idle and suspend-to-RAM
++		 * paths both run this callback, so returning an
++		 * error here aborts every suspend attempt. Fall
++		 * through to the shutdown instead: the GMU stop
++		 * sequence degrades to a forced power-off when the
++		 * GMU is not responsive, and resume cold-boots the
++		 * GPU back up.
++		 */
+ 		dev_err(dev, "Timeout waiting for GPU to suspend\n");
+-		ret = -EBUSY;
+-		goto out;
+ 	}
+ 
+ 	ret = pm_runtime_force_suspend(dev);
+-out:
+ 	if (ret)
+ 		resume_scheduler(gpu);
+ 
+diff --git a/drivers/net/wireless/ath/ath10k/Kconfig b/drivers/net/wireless/ath/ath10k/Kconfig
+index efb9f022d..38b77b249 100644
+--- a/drivers/net/wireless/ath/ath10k/Kconfig
++++ b/drivers/net/wireless/ath/ath10k/Kconfig
+@@ -6,6 +6,7 @@ config ATH10K
+ 	select CRC32
+ 	select WANT_DEV_COREDUMP
+ 	select ATH10K_CE
++	select CRYPTO_SHA256
+ 	help
+ 	  This module adds support for wireless adapters based on
+ 	  Atheros IEEE 802.11ac family of chipsets.
+diff --git a/drivers/net/wireless/ath/ath10k/core.c b/drivers/net/wireless/ath/ath10k/core.c
+index 7c2939cbd..9f399cc39 100644
+--- a/drivers/net/wireless/ath/ath10k/core.c
++++ b/drivers/net/wireless/ath/ath10k/core.c
+@@ -15,6 +15,9 @@
+ #include <linux/ctype.h>
+ #include <linux/pm_qos.h>
+ #include <linux/nvmem-consumer.h>
++#include <linux/etherdevice.h>
++#include <crypto/hash.h>
++#include <crypto/sha2.h>
+ #include <asm/byteorder.h>
+ 
+ #include "core.h"
+@@ -53,6 +56,10 @@ module_param(fw_diag_log, bool, 0644);
+ module_param_named(frame_mode, ath10k_frame_mode, uint, 0644);
+ module_param_named(coredump_mask, ath10k_coredump_mask, ulong, 0444);
+ 
++char *ath10k_macaddr_param;
++module_param_named(macaddr, ath10k_macaddr_param, charp, 0444);
++MODULE_PARM_DESC(macaddr, "MAC address override, xx:xx:xx:xx:xx:xx");
++
+ MODULE_PARM_DESC(debug_mask, "Debugging mask");
+ MODULE_PARM_DESC(uart_print, "Uart target debugging");
+ MODULE_PARM_DESC(skip_otp, "Skip otp failure for calibration in testmode");
+@@ -62,6 +69,38 @@ MODULE_PARM_DESC(frame_mode,
+ MODULE_PARM_DESC(coredump_mask, "Bitfield of what to include in firmware crash file");
+ MODULE_PARM_DESC(fw_diag_log, "Diag based fw log debugging");
+ 
++/* Generate a stable MAC from the board serial (SHA-256 based) */
++static int ath10k_get_mac_from_serial(u8 *mac)
++{
++	struct crypto_shash *tfm;
++	const char *serial;
++	u8 hash[SHA256_DIGEST_SIZE];
++	int ret;
++
++	serial = dmi_get_system_info(DMI_BOARD_SERIAL);
++	if (!serial || !serial[0])
++		return -ENOENT;
++
++	tfm = crypto_alloc_shash("sha256", 0, 0);
++	if (IS_ERR(tfm))
++		return PTR_ERR(tfm);
++
++	ret = crypto_shash_tfm_digest(tfm, serial, strlen(serial), hash);
++	crypto_free_shash(tfm);
++	if (ret)
++		return ret;
++
++	/* Use first 6 bytes of hash; mark as locally administered unicast */
++	mac[0] = (hash[0] & 0xFC) | 0x02;
++	mac[1] = hash[1];
++	mac[2] = hash[2];
++	mac[3] = hash[3];
++	mac[4] = hash[4];
++	mac[5] = hash[5];
++
++	return 0;
++}
++
+ static const struct ath10k_hw_params ath10k_hw_params_list[] = {
+ 	{
+ 		.id = QCA988X_HW_2_0_VERSION,
+@@ -3449,7 +3488,20 @@ static int ath10k_core_probe_fw(struct ath10k *ar)
+ 		ath10k_debug_print_board_info(ar);
+ 	}
+ 
+-	device_get_mac_address(ar->dev, ar->mac_addr);
++	if (ath10k_macaddr_param &&
++	    mac_pton(ath10k_macaddr_param, ar->mac_addr) &&
++	    is_valid_ether_addr(ar->mac_addr)) {
++		ath10k_dbg(ar, ATH10K_DBG_BOOT, "using cmdline mac addr %pM\n",
++			   ar->mac_addr);
++	} else {
++		device_get_mac_address(ar->dev, ar->mac_addr);
++	}
++
++	if (!is_valid_ether_addr(ar->mac_addr) &&
++	    !ath10k_get_mac_from_serial(ar->mac_addr)) {
++		ath10k_dbg(ar, ATH10K_DBG_BOOT,
++			   "using serial-derived mac addr %pM\n", ar->mac_addr);
++	}
+ 
+ 	ret = ath10k_core_init_firmware_features(ar);
+ 	if (ret) {
+diff --git a/drivers/net/wireless/ath/ath10k/thermal.c b/drivers/net/wireless/ath/ath10k/thermal.c
+index 9bb486f8e..69076eaa3 100644
+--- a/drivers/net/wireless/ath/ath10k/thermal.c
++++ b/drivers/net/wireless/ath/ath10k/thermal.c
+@@ -158,6 +158,17 @@ int ath10k_thermal_register(struct ath10k *ar)
+ 	struct device *hwmon_dev;
+ 	int ret;
+ 
++	/*
++	 * The WCN3990 firmware used on SM8150 advertises thermal throttling,
++	 * but hangs when ath10k reads it. Thermal monitoring is provided by
++	 * the platform TSENS driver, so disable ath10k's internal facility on
++	 * the SNOC bus. This matches the nabu Fedora kernel source.
++	 */
++	if (ar->hif.bus == ATH10K_BUS_SNOC &&
++	    test_bit(WMI_SERVICE_THERM_THROT, ar->wmi.svc_map)) {
++		clear_bit(WMI_SERVICE_THERM_THROT, ar->wmi.svc_map);
++	}
++
+ 	if (!test_bit(WMI_SERVICE_THERM_THROT, ar->wmi.svc_map))
+ 		return 0;
+ 
+diff --git a/drivers/tty/serial/qcom_geni_serial.c b/drivers/tty/serial/qcom_geni_serial.c
+index 1e39122ec..9e7ccb998 100644
+--- a/drivers/tty/serial/qcom_geni_serial.c
++++ b/drivers/tty/serial/qcom_geni_serial.c
+@@ -1975,6 +1975,7 @@ static int qcom_geni_serial_suspend(struct device *dev)
+ 	struct qcom_geni_serial_port *port = dev_get_drvdata(dev);
+ 	struct uart_port *uport = &port->uport;
+ 	struct qcom_geni_private_data *private_data = uport->private_data;
++	int ret;
+ 
+ 	/*
+ 	 * This is done so we can hit the lowest possible state in suspend
+@@ -1984,7 +1985,30 @@ static int qcom_geni_serial_suspend(struct device *dev)
+ 		geni_icc_set_tag(&port->se, QCOM_ICC_TAG_ACTIVE_ONLY);
+ 		geni_icc_set_bw(&port->se);
+ 	}
+-	return uart_suspend_port(private_data->drv, uport);
++
++	ret = uart_suspend_port(private_data->drv, uport);
++	if (ret)
++		return ret;
++
++	/*
++	 * uart_suspend_port() only drops the runtime PM reference that
++	 * uart_startup() took. During system sleep the PM core holds its own
++	 * reference from device_prepare(), so the usage count never reaches
++	 * zero here and qcom_geni_serial_runtime_suspend() is not invoked.
++	 * That leaves the SE clocks/interconnect enabled and, more
++	 * importantly, skips pinctrl_pm_select_sleep_state() in
++	 * geni_se_resources_off(), so the pads stay in their "default" state
++	 * instead of the "sleep" state. Force the runtime suspend so the
++	 * resources are really gated and the sleep pinctrl (GPIO mode with
++	 * the RX pull-up) is applied before the wake IRQ gets armed.
++	 *
++	 * When no_console_suspend is set the console must remain active
++	 * across system sleep, so skip the force suspend path.
++	 */
++	if (!console_suspend_enabled && uart_console(uport))
++		return 0;
++
++	return pm_runtime_force_suspend(dev);
+ }
+ 
+ static int qcom_geni_serial_resume(struct device *dev)
+@@ -1994,6 +2018,10 @@ static int qcom_geni_serial_resume(struct device *dev)
+ 	struct uart_port *uport = &port->uport;
+ 	struct qcom_geni_private_data *private_data = uport->private_data;
+ 
++	ret = pm_runtime_force_resume(dev);
++	if (ret)
++		return ret;
++
+ 	ret = uart_resume_port(private_data->drv, uport);
+ 	if (uart_console(uport)) {
+ 		geni_icc_set_tag(&port->se, QCOM_ICC_TAG_ALWAYS);

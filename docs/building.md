@@ -19,7 +19,8 @@ matching pair of images.
 | `packages.<system>.impermanent-nabu-{esp,rootfs}` | matching ESP and Btrfs images for the impermanent configuration |
 | `packages.<system>.nabu-esp` | `esp.img` and `efi-files.zip` |
 | `packages.<system>.nabu-rootfs` | `nabu-rootfs.ext4.img`, uncompressed by default |
-| `packages.<system>.nabu-kernel` | the sm8150 kernel |
+| `packages.<system>.nabu-kernel` | the default kernel (`nabu-kernel-sm8150-fork`) |
+| `packages.<system>.nabu-kernel-<name>` | one output per kernel in `pkgs/kernel/default.nix` |
 | `packages.<system>.default` | `nabu-esp` |
 
 `<system>` supports `x86_64-linux` and `aarch64-linux`. There are no `nabu-uki`,
@@ -29,6 +30,30 @@ The ext4 system's host name is `nabu` (an alias of `ext4-nabu`) and the imperman
 one is `impermanent-nabu`; both are flake keys or aliases, so
 `sudo nixos-rebuild switch --flake .` automatically selects the configuration of
 the installed storage profile without writing `#hostname` by hand.
+
+## Kernels
+
+Every kernel lives in its own directory under `pkgs/kernel/` and is listed once
+in `pkgs/kernel/default.nix`; see [its README](../pkgs/kernel/README.md) for the
+layout and for how to add a version.  The configuration selects one by name:
+
+```sh
+# Build a single kernel (no system closure)
+nix build .#nabu-kernel-sm8150-fork
+nix build .#nabu-kernel-mainline-latest
+
+# Build the whole system (and the ESP/rootfs pairing) with that kernel
+nix build .#ext4-nabu-esp
+nixos-rebuild build --flake .#ext4-nabu --option nabu.kernel.name mainline-latest
+```
+
+`sm8150-fork` (the pinned sm8150-mainline tree) is the default and the
+known-good kernel for the device.  `mainline-latest` is nixpkgs' `linux_latest`
+plus the rebased downstream nabu patches: it is the candidate for the next
+kernel version and is expected to be verified on hardware before it replaces
+the fork.  Building the kernel alone is enough to check a patch rebase; the
+device tree and the required-config assertions (`configs/required-nabu.config`)
+are verified during that build.
 
 ## Building a matching image pair
 
@@ -66,9 +91,9 @@ working tree unchanged while it runs. For CI builds, use the manual workflows be
 The Actions tab provides two `workflow_dispatch` workflows once their files are
 on the default branch. Choose the same branch/tag (and unchanged commit) for both:
 
-1. **Build kernel and push to Cachix** builds
-   `.#nixosConfigurations.nabu.config.system.build.kernel` and explicitly uploads
-   its closure to `nix-nabu`. First configure the repository Actions secret
+1. **Build kernel and push to Cachix** builds every kernel in
+   `pkgs/kernel/default.nix` (`.#nabu-kernel-<name>`, one matrix job each) and
+   explicitly uploads each closure to `nix-nabu`. First configure the repository Actions secret
    `CACHIX_AUTH_TOKEN` with write access to that cache. Missing credentials or a
    failed upload fail the job, including when the build itself was a cache hit.
 2. **Build and package images** builds `.#ext4-nabu-esp`, `.#ext4-nabu-rootfs`,
