@@ -42,10 +42,18 @@ layout and for how to add a version.  The configuration selects one by name:
 nix build .#nabu-kernel-sm8150-fork
 nix build .#nabu-kernel-mainline-latest
 
-# Build the whole system (and the ESP/rootfs pairing) with that kernel
+# Build the whole system (and the ESP/rootfs pairing) with that kernel: set the
+# option in a module, then use the normal commands.
+#   { nabu.kernel.name = "mainline-latest"; }
 nix build .#ext4-nabu-esp
-nixos-rebuild build --flake .#ext4-nabu --option nabu.kernel.name mainline-latest
+sudo nixos-rebuild switch --flake .#ext4-nabu
 ```
+
+`nabu.kernel.name` is an ordinary NixOS option (an enum of the kernel names in
+`pkgs/kernel/default.nix`), so configuration is where it is set;
+`nixos-rebuild --option` passes Nix settings through to Nix and has nothing to
+do with it.  To build the system with the option overridden without editing the
+repository, see [pkgs/kernel/README.md](../pkgs/kernel/README.md).
 
 `sm8150-fork` (the pinned sm8150-mainline tree) is the default and the
 known-good kernel for the device.  `mainline-latest` is nixpkgs' `linux_latest`

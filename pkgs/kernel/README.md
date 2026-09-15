@@ -11,21 +11,49 @@ pkgs/kernel/<name>/configs/      kconfig fragment + required settings
 
 The directory name is also the kernel's name in
 [`default.nix`](default.nix), in the flake package outputs
-(`.#nabu-kernel-<name>`) and in the `nabu.kernel.name` NixOS option — pick one
-with:
+(`.#nabu-kernel-<name>`) and in the `nabu.kernel.name` NixOS option.
+
+Building one kernel needs no system closure — this is the cheap way to check a
+patch rebase or a configuration change:
 
 ```sh
-nix build .#nabu-kernel-mainline-latest      # build that kernel only
-nixos-rebuild switch --flake .#ext4-nabu --option nabu.kernel.name mainline-latest
+nix build .#nabu-kernel-mainline-latest
+nix build .#nabu-kernel-sm8150-fork
 ```
 
-or, for a checkout of this repository:
+`nabu.kernel.name` is an ordinary NixOS option (an enum of the names registered
+in `default.nix`), so choosing the kernel for the *system* means setting it in
+configuration like any other option:
 
 ```nix
-# nixos/configuration.nix (or a local module)
-{ lib, ... }: {
-  nabu.kernel.name = lib.mkForce "mainline-latest";
+# nixos/configuration.nix, or a module of your own
+{
+  nabu.kernel.name = "mainline-latest";
 }
+```
+
+```sh
+sudo nixos-rebuild switch --flake .#ext4-nabu
+```
+
+Two things to keep in mind:
+
+- `nixos-rebuild --option` is **not** how this option is set.  That flag passes
+  Nix settings (such as `substituters`) through to Nix itself.
+- A git flake only sees tracked files, so a new module file has to be
+  `git add`ed before `nixos-rebuild` can see it.
+
+To try a kernel without editing the repository at all, override the option
+while building the system and activate that store path (the previous
+generations, with the other kernel, stay bootable):
+
+```sh
+nix build --impure --expr '
+  let f = builtins.getFlake (toString ./.);
+  in (f.nixosConfigurations.ext4-nabu.extendModules {
+       modules = [ { nabu.kernel.name = "mainline-latest"; } ];
+     }).config.system.build.toplevel'
+sudo nixos-rebuild switch --store-path "$(readlink -f result)"
 ```
 
 ## Available kernels

@@ -39,10 +39,16 @@ ext4 系统的主机名是 `nabu`（`ext4-nabu` 的别名），impermanent 系�
 nix build .#nabu-kernel-sm8150-fork
 nix build .#nabu-kernel-mainline-latest
 
-# 用指定内核构建系统（以及配套 ESP/rootfs）
+# 用指定内核构建系统（以及配套 ESP/rootfs）：先在模块里设置选项，再用常规命令
+#   { nabu.kernel.name = "mainline-latest"; }
 nix build .#ext4-nabu-esp
-nixos-rebuild build --flake .#ext4-nabu --option nabu.kernel.name mainline-latest
+sudo nixos-rebuild switch --flake .#ext4-nabu
 ```
+
+`nabu.kernel.name` 是普通的 NixOS 选项（取值是 `pkgs/kernel/default.nix` 里的内核
+名字），因此要写在配置里；`nixos-rebuild --option` 是把 Nix 设置传给 Nix 本身，
+和它无关。若不想改动仓库就想用指定内核构建系统，见
+[pkgs/kernel/README.md](../pkgs/kernel/README.md)。
 
 `sm8150-fork`（固定到 sm8150-mainline 的下游树）是默认内核，也是当前实机已验证的
 内核；`mainline-latest` 是 nixpkgs 的 `linux_latest` 加上重新 rebase 的下游 nabu
