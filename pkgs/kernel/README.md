@@ -40,6 +40,30 @@ tracks upstream and is the kernel under test: it is expected to gain the
 remaining downstream drivers as they are rebased, and to eventually replace
 the fork once it is verified on hardware.
 
+### Status of `mainline-latest`
+
+Verified so far:
+
+- every patch in `patches/` applies to a pristine nixpkgs `linux-7.2.3` tree
+  with no fuzz and no rejects;
+- kconfig resolves with our fragment (`configs/nabu.config`); on arm64 an
+  option kconfig cannot satisfy is a build error, so this also checks the
+  fragment itself;
+- `arch/arm64/boot/dts/qcom/sm8150-xiaomi-nabu.dtb` compiles with `dtc`;
+- the flake evaluates (`nix flake check --no-build --all-systems`) and
+  `sm8150-fork` keeps its existing store path, so the published cache still
+  applies to the default kernel.
+
+Not verified yet: a complete `nix build .#nabu-kernel-mainline-latest` (the
+first attempt was stopped by a full disk on the local Linux builder, before it
+reached the end) and, of course, booting the device with it.  The CI kernel
+workflow builds and caches it, so the next step is to let that run and then
+flash the resulting generation.
+
+Still downstream-only, i.e. worth checking on the device: the Wi-Fi/Bluetooth
+firmware path, camera and sensor drivers, and anything that depends on the
+sm8150-specific clock/interconnect tables that upstream keeps changing.
+
 ## Adding a kernel
 
 1. Create `pkgs/kernel/<name>/` with `default.nix`, `patches/` and `configs/`.
