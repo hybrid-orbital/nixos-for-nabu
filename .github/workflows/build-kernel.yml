@@ -63,19 +63,33 @@ jobs:
 
       - name: Build native ARM64 kernel (${{ matrix.kernel }})
         run: |
-          nix build ".#nabu-kernel-$KERNEL" \
+          # `^*` asks for every output of the kernel derivation (out, dev,
+          # modules, ...).  A NixOS system only depends on `out`, so building
+          # and pushing that alone leaves `-modules`/`-dev` to be rebuilt on
+          # every machine that consumes this cache.
+          nix build ".#nabu-kernel-$KERNEL^*" \
             --no-update-lock-file --print-build-logs --out-link result-kernel
 
-      - name: Push kernel closure to Cachix
+      - name: Push kernel outputs to Cachix
         env:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
         run: |
-          kernel=$(readlink -f result-kernel)
-          cachix push "$CACHIX_CACHE_NAME" "$kernel"
+          set -euo pipefail
+          drv=$(nix path-info --derivation ".#nabu-kernel-$KERNEL")
+          mapfile -t paths < <(nix-store -q --outputs "$drv" | sort -u)
+          # The kconfig derivation is per-kernel and custom: it is not in
+          # cache.nixos.org and it is not an input of any kernel output, so it
+          # has to be pushed explicitly or a consumer rebuilds the config.
+          paths+=("$(nix build --no-link --print-out-paths ".#nabu-kernel-$KERNEL.configfile")")
+          for path in "${paths[@]}"; do
+            echo "pushing $path"
+            cachix push "$CACHIX_CACHE_NAME" "$path"
+          done
           {
             echo "### Kernel cached: $KERNEL"
             echo "Commit: $GITHUB_SHA"
-            echo "Store path: $kernel"
             echo "Kernel: $KERNEL"
+            echo 'Store paths:'
+            printf -- '- `%s`\n' "${paths[@]}"
             echo "Cache: https://$CACHIX_CACHE_NAME.cachix.org"
           } >> "$GITHUB_STEP_SUMMARY"
