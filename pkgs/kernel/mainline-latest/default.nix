@@ -86,17 +86,24 @@ in
 kernel.overrideAttrs (previousAttrs: {
   # Independently verify the resolved config, including implied dependencies.
   # Every line of ./configs/required-nabu.config must be present verbatim in
-  # the post-kconfig .config.
+  # the post-kconfig .config; a requirement of "CONFIG_FOO=m" is also accepted
+  # as "CONFIG_FOO=y", because building a driver in instead of as a module
+  # keeps both the root filesystem and the panel reachable.
   postConfigure = (previousAttrs.postConfigure or "") + ''
     echo ">>> checking nabu boot-critical kernel configuration"
     while IFS= read -r requirement; do
       case "$requirement" in
         ""|'#'*) continue ;;
       esac
-      if ! grep -Fqx "$requirement" "$buildRoot/.config"; then
-        echo "ERROR: required nabu kernel setting is missing: $requirement" >&2
-        exit 1
+      if grep -Fqx "$requirement" "$buildRoot/.config"; then
+        continue
       fi
+      if [[ "$requirement" == *=m ]] &&
+         grep -Fqx "''${requirement%=m}=y" "$buildRoot/.config"; then
+        continue
+      fi
+      echo "ERROR: required nabu kernel setting is missing: $requirement" >&2
+      exit 1
     done < ${requiredConfig}
   '';
 })
