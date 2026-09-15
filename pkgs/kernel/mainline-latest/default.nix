@@ -24,12 +24,11 @@
 # top.  `ignoreConfigErrors` is not relaxed: on arm64 an option that kconfig
 # cannot satisfy is a build error, which keeps the fragment honest.
 #
-# `autoModules` is disabled: the nixpkgs generator would otherwise answer "m"
-# to every single driver the tree offers, which turns this kernel into a
-# several-thousand-module build (more than 10 GiB of build directory and hours
-# on the CI runner) for no benefit on a fixed tablet.  ./configs/nabu.config
-# lists the drivers the device uses instead; the same trade-off is made by the
-# downstream fork in ../sm8150-fork.
+# Both `enableCommonConfig` and `autoModules` keep their nixpkgs defaults: the
+# common config is written for the "answer m to everything" behaviour, so
+# turning autoModules off silently drops over a hundred settings that are
+# needed for a NixOS userspace (leaving it on costs build time instead; see
+# ./configs/nabu.config for the details).
 {
   lib,
   linux_latest,
@@ -73,7 +72,6 @@ let
     ];
 
     extraConfig = extraConfig;
-    autoModules = false;
 
     extraMeta = {
       branch = "nixpkgs/linux_latest";
