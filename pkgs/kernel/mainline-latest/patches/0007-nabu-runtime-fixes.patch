@@ -1,5 +1,5 @@
 diff --git a/drivers/gpu/drm/msm/adreno/adreno_device.c b/drivers/gpu/drm/msm/adreno/adreno_device.c
-index 7f20320ef..a2f40b226 100644
+index 7f20320..a2f40b2 100644
 --- a/drivers/gpu/drm/msm/adreno/adreno_device.c
 +++ b/drivers/gpu/drm/msm/adreno/adreno_device.c
 @@ -376,13 +376,20 @@ static int adreno_system_suspend(struct device *dev)
@@ -27,7 +27,7 @@ index 7f20320ef..a2f40b226 100644
  		resume_scheduler(gpu);
  
 diff --git a/drivers/net/wireless/ath/ath10k/Kconfig b/drivers/net/wireless/ath/ath10k/Kconfig
-index efb9f022d..38b77b249 100644
+index efb9f02..38b77b2 100644
 --- a/drivers/net/wireless/ath/ath10k/Kconfig
 +++ b/drivers/net/wireless/ath/ath10k/Kconfig
 @@ -6,6 +6,7 @@ config ATH10K
@@ -39,20 +39,21 @@ index efb9f022d..38b77b249 100644
  	  This module adds support for wireless adapters based on
  	  Atheros IEEE 802.11ac family of chipsets.
 diff --git a/drivers/net/wireless/ath/ath10k/core.c b/drivers/net/wireless/ath/ath10k/core.c
-index 7c2939cbd..9f399cc39 100644
+index 7c2939c..66cefa4 100644
 --- a/drivers/net/wireless/ath/ath10k/core.c
 +++ b/drivers/net/wireless/ath/ath10k/core.c
-@@ -15,6 +15,9 @@
+@@ -15,6 +15,10 @@
  #include <linux/ctype.h>
  #include <linux/pm_qos.h>
  #include <linux/nvmem-consumer.h>
 +#include <linux/etherdevice.h>
++#include <linux/hex.h>
 +#include <crypto/hash.h>
 +#include <crypto/sha2.h>
  #include <asm/byteorder.h>
  
  #include "core.h"
-@@ -53,6 +56,10 @@ module_param(fw_diag_log, bool, 0644);
+@@ -53,6 +57,10 @@ module_param(fw_diag_log, bool, 0644);
  module_param_named(frame_mode, ath10k_frame_mode, uint, 0644);
  module_param_named(coredump_mask, ath10k_coredump_mask, ulong, 0444);
  
@@ -63,7 +64,7 @@ index 7c2939cbd..9f399cc39 100644
  MODULE_PARM_DESC(debug_mask, "Debugging mask");
  MODULE_PARM_DESC(uart_print, "Uart target debugging");
  MODULE_PARM_DESC(skip_otp, "Skip otp failure for calibration in testmode");
-@@ -62,6 +69,38 @@ MODULE_PARM_DESC(frame_mode,
+@@ -62,6 +70,38 @@ MODULE_PARM_DESC(frame_mode,
  MODULE_PARM_DESC(coredump_mask, "Bitfield of what to include in firmware crash file");
  MODULE_PARM_DESC(fw_diag_log, "Diag based fw log debugging");
  
@@ -102,7 +103,7 @@ index 7c2939cbd..9f399cc39 100644
  static const struct ath10k_hw_params ath10k_hw_params_list[] = {
  	{
  		.id = QCA988X_HW_2_0_VERSION,
-@@ -3449,7 +3488,20 @@ static int ath10k_core_probe_fw(struct ath10k *ar)
+@@ -3449,7 +3489,20 @@ static int ath10k_core_probe_fw(struct ath10k *ar)
  		ath10k_debug_print_board_info(ar);
  	}
  
@@ -125,7 +126,7 @@ index 7c2939cbd..9f399cc39 100644
  	ret = ath10k_core_init_firmware_features(ar);
  	if (ret) {
 diff --git a/drivers/net/wireless/ath/ath10k/thermal.c b/drivers/net/wireless/ath/ath10k/thermal.c
-index 9bb486f8e..69076eaa3 100644
+index 9bb486f..69076ea 100644
 --- a/drivers/net/wireless/ath/ath10k/thermal.c
 +++ b/drivers/net/wireless/ath/ath10k/thermal.c
 @@ -158,6 +158,17 @@ int ath10k_thermal_register(struct ath10k *ar)
@@ -147,7 +148,7 @@ index 9bb486f8e..69076eaa3 100644
  		return 0;
  
 diff --git a/drivers/tty/serial/qcom_geni_serial.c b/drivers/tty/serial/qcom_geni_serial.c
-index 1e39122ec..9e7ccb998 100644
+index 1e39122..9e7ccb9 100644
 --- a/drivers/tty/serial/qcom_geni_serial.c
 +++ b/drivers/tty/serial/qcom_geni_serial.c
 @@ -1975,6 +1975,7 @@ static int qcom_geni_serial_suspend(struct device *dev)

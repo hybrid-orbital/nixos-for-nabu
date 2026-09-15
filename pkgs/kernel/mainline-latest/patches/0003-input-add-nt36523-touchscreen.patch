@@ -1,5 +1,5 @@
 diff --git a/drivers/input/touchscreen/Kconfig b/drivers/input/touchscreen/Kconfig
-index 9b9ae8ac3..5c3415aaf 100644
+index 9b9ae8a..5c3415a 100644
 --- a/drivers/input/touchscreen/Kconfig
 +++ b/drivers/input/touchscreen/Kconfig
 @@ -12,6 +12,8 @@ menuconfig INPUT_TOUCHSCREEN
@@ -12,7 +12,7 @@ index 9b9ae8ac3..5c3415aaf 100644
  	tristate "Marvell 88PM860x touchscreen"
  	depends on MFD_88PM860X
 diff --git a/drivers/input/touchscreen/Makefile b/drivers/input/touchscreen/Makefile
-index bfd9de833..c6ce25123 100644
+index bfd9de8..c6ce251 100644
 --- a/drivers/input/touchscreen/Makefile
 +++ b/drivers/input/touchscreen/Makefile
 @@ -119,3 +119,4 @@ obj-$(CONFIG_TOUCHSCREEN_IQS5XX)	+= iqs5xx.o
@@ -22,7 +22,7 @@ index bfd9de833..c6ce25123 100644
 +obj-$(CONFIG_TOUCHSCREEN_NT36523_SPI) += nt36523/
 diff --git a/drivers/input/touchscreen/nt36523/Kconfig b/drivers/input/touchscreen/nt36523/Kconfig
 new file mode 100644
-index 000000000..5f4ef5abf
+index 0000000..5f4ef5a
 --- /dev/null
 +++ b/drivers/input/touchscreen/nt36523/Kconfig
 @@ -0,0 +1,11 @@
@@ -39,7 +39,7 @@ index 000000000..5f4ef5abf
 +	  If unsure, say N.
 diff --git a/drivers/input/touchscreen/nt36523/Makefile b/drivers/input/touchscreen/nt36523/Makefile
 new file mode 100644
-index 000000000..d16afc8f1
+index 0000000..d16afc8
 --- /dev/null
 +++ b/drivers/input/touchscreen/nt36523/Makefile
 @@ -0,0 +1,8 @@
@@ -53,10 +53,10 @@ index 000000000..d16afc8f1
 +	nt36xxx_fw_update.o
 diff --git a/drivers/input/touchscreen/nt36523/nt36xxx.c b/drivers/input/touchscreen/nt36523/nt36xxx.c
 new file mode 100644
-index 000000000..46cc0dd60
+index 0000000..845bb67
 --- /dev/null
 +++ b/drivers/input/touchscreen/nt36523/nt36xxx.c
-@@ -0,0 +1,1921 @@
+@@ -0,0 +1,1895 @@
 +/*
 + * Copyright (C) 2010 - 2018 Novatek, Inc.
 + * Copyright (C) 2021 XiaoMi, Inc.
@@ -80,10 +80,10 @@ index 000000000..46cc0dd60
 +#include <linux/interrupt.h>
 +#include <linux/irq.h>
 +#include <linux/gpio.h>
++#include <linux/gpio/consumer.h>
 +#include <linux/proc_fs.h>
 +#include <linux/input/mt.h>
 +#include <linux/debugfs.h>
-+#include <linux/of_gpio.h>
 +#include <linux/of_irq.h>
 +
 +#ifdef CONFIG_DRM
@@ -733,11 +733,19 @@ index 000000000..46cc0dd60
 +	int32_t ret = 0;
 +
 +#if NVT_TOUCH_SUPPORT_HW_RST
-+	ts->reset_gpio = of_get_named_gpio_flags(np, "novatek,reset-gpio", 0, &ts->reset_flags);
-+	NVT_LOG("novatek,reset-gpio=%d\n", ts->reset_gpio);
++	ts->reset_gpio = devm_gpiod_get_optional(dev, "novatek,reset", GPIOD_OUT_LOW);
++	if (IS_ERR(ts->reset_gpio)) {
++		NVT_ERR("Failed to get novatek,reset-gpio\n");
++		return PTR_ERR(ts->reset_gpio);
++	}
++	NVT_LOG("novatek,reset-gpio=%s\n", ts->reset_gpio ? "present" : "absent");
 +#endif
-+	ts->irq_gpio = of_get_named_gpio(np, "novatek,irq-gpio", 0);
-+	NVT_LOG("novatek,irq-gpio=%d\n", ts->irq_gpio);
++	ts->irq_gpio = devm_gpiod_get_optional(dev, "novatek,irq", GPIOD_IN);
++	if (IS_ERR(ts->irq_gpio)) {
++		NVT_ERR("Failed to get novatek,irq-gpio\n");
++		return PTR_ERR(ts->irq_gpio);
++	}
++	NVT_LOG("novatek,irq-gpio=%s\n", ts->irq_gpio ? "present" : "absent");
 +
 +	ts->pen_support = of_property_read_bool(np, "novatek,pen-support");
 +	NVT_LOG("novatek,pen-support=%d\n", ts->pen_support);
@@ -781,10 +789,8 @@ index 000000000..46cc0dd60
 +#else
 +static int32_t nvt_parse_dt(struct device *dev)
 +{
-+#if NVT_TOUCH_SUPPORT_HW_RST
-+	ts->reset_gpio = NVTTOUCH_RST_PIN;
-+#endif
-+	ts->irq_gpio = NVTTOUCH_INT_PIN;
++	/* No device tree: there is no GPIO to look up. */
++	ts->irq_gpio = NULL;
 +	return 0;
 +}
 +#endif
@@ -798,36 +804,9 @@ index 000000000..46cc0dd60
 +*******************************************************/
 +static int nvt_gpio_config(struct nvt_ts_data *ts)
 +{
-+	int32_t ret = 0;
-+
-+#if NVT_TOUCH_SUPPORT_HW_RST
-+	/* request RST-pin (Output/High) */
-+	if (gpio_is_valid(ts->reset_gpio)) {
-+		ret = gpio_request_one(ts->reset_gpio, GPIOF_OUT_INIT_LOW, "NVT-tp-rst");
-+		if (ret) {
-+			NVT_ERR("Failed to request NVT-tp-rst GPIO\n");
-+			goto err_request_reset_gpio;
-+		}
-+	}
-+#endif
-+
-+	/* request INT-pin (Input) */
-+	if (gpio_is_valid(ts->irq_gpio)) {
-+		ret = gpio_request_one(ts->irq_gpio, GPIOF_IN, "NVT-int");
-+		if (ret) {
-+			NVT_ERR("Failed to request NVT-int GPIO\n");
-+			goto err_request_irq_gpio;
-+		}
-+	}
-+
-+	return ret;
-+
-+err_request_irq_gpio:
-+#if NVT_TOUCH_SUPPORT_HW_RST
-+	gpio_free(ts->reset_gpio);
-+err_request_reset_gpio:
-+#endif
-+	return ret;
++	/* Both pins are requested with devm_gpiod_get_optional() below (see
++	 * nvt_parse_dt()), so there is nothing left to do here. */
++	return 0;
 +}
 +
 +/*******************************************************
@@ -839,12 +818,7 @@ index 000000000..46cc0dd60
 +*******************************************************/
 +static void nvt_gpio_deconfig(struct nvt_ts_data *ts)
 +{
-+	if (gpio_is_valid(ts->irq_gpio))
-+		gpio_free(ts->irq_gpio);
-+#if NVT_TOUCH_SUPPORT_HW_RST
-+	if (gpio_is_valid(ts->reset_gpio))
-+		gpio_free(ts->reset_gpio);
-+#endif
++	/* devres releases the GPIOs when the device is unbound. */
 +}
 +
 +static uint8_t nvt_fw_recovery(uint8_t *point_data)
@@ -1365,7 +1339,7 @@ index 000000000..46cc0dd60
 +	nvt_eng_reset();
 +
 +#if NVT_TOUCH_SUPPORT_HW_RST
-+	gpio_set_value(ts->reset_gpio, 1);
++	gpiod_set_value(ts->reset_gpio, 1);
 +#endif
 +
 +	// need 10ms delay after POR(power on reset)
@@ -1509,7 +1483,7 @@ index 000000000..46cc0dd60
 +	} /* if (ts->pen_support) */
 +
 +	//---set int-pin & request irq---
-+	client->irq = gpio_to_irq(ts->irq_gpio);
++	client->irq = ts->irq_gpio ? gpiod_to_irq(ts->irq_gpio) : 0;
 +	if (client->irq) {
 +		NVT_LOG("int_trigger_type=%d\n", ts->int_trigger_type);
 +		ts->irq_enabled = true;
@@ -1845,7 +1819,7 @@ index 000000000..46cc0dd60
 +
 +	// please make sure display reset(RESX) sequence and mipi dsi cmds sent before this
 +#if NVT_TOUCH_SUPPORT_HW_RST
-+	gpio_set_value(ts->reset_gpio, 1);
++	gpiod_set_value(ts->reset_gpio, 1);
 +#endif
 +	ret = nvt_update_firmware(ts->fw_name);
 +	if (ret)
@@ -1980,10 +1954,10 @@ index 000000000..46cc0dd60
 +MODULE_LICENSE("GPL");
 diff --git a/drivers/input/touchscreen/nt36523/nt36xxx.h b/drivers/input/touchscreen/nt36523/nt36xxx.h
 new file mode 100644
-index 000000000..530d36613
+index 0000000..26ecec0
 --- /dev/null
 +++ b/drivers/input/touchscreen/nt36523/nt36xxx.h
-@@ -0,0 +1,244 @@
+@@ -0,0 +1,246 @@
 +/*
 + * Copyright (C) 2010 - 2018 Novatek, Inc.
 + * Copyright (C) 2021 XiaoMi, Inc.
@@ -2006,6 +1980,7 @@ index 000000000..530d36613
 +#define		_LINUX_NVT_TOUCH_H
 +
 +#include <linux/delay.h>
++#include <linux/gpio/consumer.h>
 +#include <linux/input.h>
 +#include <linux/of.h>
 +#include <linux/spi/spi.h>
@@ -2127,10 +2102,11 @@ index 000000000..530d36613
 +	uint8_t max_touch_num;
 +	uint8_t max_button_num;
 +	uint32_t int_trigger_type;
-+	int32_t irq_gpio;
-+	uint32_t irq_flags;
-+	int32_t reset_gpio;
-+	uint32_t reset_flags;
++	/* GPIOs are looked up through the gpiod consumer API: the legacy
++	 * integer interface (and the of_gpio.h helpers this driver used) is
++	 * gone in current kernels. */
++	struct gpio_desc *irq_gpio;
++	struct gpio_desc *reset_gpio;
 +	struct mutex lock;
 +	const struct nvt_ts_mem_map *mmap;
 +	uint8_t carrier_system;
@@ -2228,10 +2204,9 @@ index 000000000..530d36613
 +#endif /* #if NVT_TOUCH_ESD_PROTECT */
 +
 +#endif /* _LINUX_NVT_TOUCH_H */
-\ No newline at end of file
 diff --git a/drivers/input/touchscreen/nt36523/nt36xxx_fw_update.c b/drivers/input/touchscreen/nt36523/nt36xxx_fw_update.c
 new file mode 100644
-index 000000000..f5da92755
+index 0000000..9998887
 --- /dev/null
 +++ b/drivers/input/touchscreen/nt36523/nt36xxx_fw_update.c
 @@ -0,0 +1,841 @@
@@ -2255,7 +2230,7 @@ index 000000000..f5da92755
 + */
 +
 +#include <linux/firmware.h>
-+#include <linux/gpio.h>
++#include <linux/gpio/consumer.h>
 +
 +#include "nt36xxx.h"
 +
@@ -2969,12 +2944,12 @@ index 000000000..f5da92755
 +		 * Keep TP_RESX low when send eng reset cmd
 +		 */
 +#if NVT_TOUCH_SUPPORT_HW_RST
-+		gpio_set_value(ts->reset_gpio, 0);
++		gpiod_set_value(ts->reset_gpio, 0);
 +		mdelay(1);	//wait 1ms
 +#endif
 +		nvt_eng_reset();
 +#if NVT_TOUCH_SUPPORT_HW_RST
-+		gpio_set_value(ts->reset_gpio, 1);
++		gpiod_set_value(ts->reset_gpio, 1);
 +		mdelay(10);	//wait tRT2BRST after TP_RST
 +#endif
 +		nvt_bootloader_reset();
@@ -3078,7 +3053,7 @@ index 000000000..f5da92755
 +#endif /* BOOT_UPDATE_FIRMWARE */
 diff --git a/drivers/input/touchscreen/nt36523/nt36xxx_mem_map.h b/drivers/input/touchscreen/nt36523/nt36xxx_mem_map.h
 new file mode 100644
-index 000000000..3f4195d63
+index 0000000..3f4195d
 --- /dev/null
 +++ b/drivers/input/touchscreen/nt36523/nt36xxx_mem_map.h
 @@ -0,0 +1,390 @@
