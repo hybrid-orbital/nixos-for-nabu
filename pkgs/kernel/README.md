@@ -42,27 +42,37 @@ the fork once it is verified on hardware.
 
 ### Status of `mainline-latest`
 
-Verified so far:
+Verified:
 
 - every patch in `patches/` applies to a pristine nixpkgs `linux-7.2.3` tree
   with no fuzz and no rejects;
 - kconfig resolves with our fragment (`configs/nabu.config`); on arm64 an
   option kconfig cannot satisfy is a build error, so this also checks the
   fragment itself;
-- `arch/arm64/boot/dts/qcom/sm8150-xiaomi-nabu.dtb` compiles with `dtc`;
+- `nix build .#nabu-kernel-mainline-latest` completes: `Image`,
+  `dtbs/qcom/sm8150-xiaomi-nabu.dtb` and the nabu modules are all built
+  (`nt36523_ts`, `panel-novatek-nt36523`, `ktz8866`, `msm`, `ufs-qcom`,
+  `qcom_fg`, `idtp9418`, `qcom_smbx`, `ath10k_snoc`, `snd-soc-sm8150`,
+  `snd-soc-cs35l41-i2c`, ...), and the `postConfigure` check passes against
+  the resolved `.config`;
 - the flake evaluates (`nix flake check --no-build --all-systems`) and
   `sm8150-fork` keeps its existing store path, so the published cache still
   applies to the default kernel.
 
-Not verified yet: a complete `nix build .#nabu-kernel-mainline-latest` (the
-first attempt was stopped by a full disk on the local Linux builder, before it
-reached the end) and, of course, booting the device with it.  The CI kernel
-workflow builds and caches it, so the next step is to let that run and then
-flash the resulting generation.
+Not verified yet: booting the device with it.  The CI kernel workflow builds
+and caches both kernels, so the next step is to run it and then flash the
+resulting generation.
 
-Still downstream-only, i.e. worth checking on the device: the Wi-Fi/Bluetooth
-firmware path, camera and sensor drivers, and anything that depends on the
-sm8150-specific clock/interconnect tables that upstream keeps changing.
+Worth checking first on the device: display bring-up and the DSI blank
+notifier handshake with the touchscreen, charging (the `pm8150b`/SMB5 path
+plus the `idtp9418` wireless charger), audio routing through the WCD9340 sound
+card, and the Wi-Fi/Bluetooth firmware path.
+
+The rebase also needed three API updates that are folded into the patches: the
+nabu panel init sequence passes the DSI multi-context by address (upstream has
+that helper as a macro, the downstream tree had its own value-argument one),
+the nt36523 touchscreen looks its GPIOs up with the gpiod consumer API
+(`of_gpio.h` is gone), and ath10k includes `<linux/hex.h>` for `mac_pton()`.
 
 ## Adding a kernel
 
