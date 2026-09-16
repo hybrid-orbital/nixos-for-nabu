@@ -87,14 +87,42 @@ Verified:
   `sm8150-fork` keeps its existing store path, so the published cache still
   applies to the default kernel.
 
-Not verified yet: booting the device with it.  The CI kernel workflow builds
-and caches both kernels, so the next step is to run it and then flash the
-resulting generation.
+The first on-device boot of this kernel stopped right after the EFI stub
+handed over: grey screen, no output, no response.  Two port defects caused it,
+both fixed since:
 
-Worth checking first on the device: display bring-up and the DSI blank
-notifier handshake with the touchscreen, charging (the `pm8150b`/SMB5 path
-plus the `idtp9418` wireless charger), audio routing through the WCD9340 sound
-card, and the Wi-Fi/Bluetooth firmware path.
+- **The device tree lost the `refgen` regulator.**  Upstream 7.2.3 already has
+  `refgen: regulator@88e7000` plus the `refgen-supply` links on both DSI
+  controllers, while the downstream tree carries its own copy of that node
+  (from a time when upstream did not have it).  Rebuilding the port from the
+  downstream tree ended up *deleting* upstream's node, and the msm DSI host
+  then silently falls back to a dummy regulator (`dsi_host.c` does a mandatory
+  `devm_regulator_bulk_get_const()` of `{ vdda, refgen }`), so REFGEN is never
+  enabled and the panel shows nothing.  Since arm64 has no EFI framebuffer
+  handover, that removes the only console the device has — which is why the
+  boot looked like a hang.
+- **The initramfs was missing boot-critical modules.**  The 6.17 fork kernel
+  builds the UFS controller, its QMP PHY, DRM/MSM and the REFGEN regulator in;
+  `mainline-latest` gets them as modules from nixpkgs' common config.  The
+  QMP UFS PHY is matched through the device tree, not through a symbol
+  dependency, so it was not pulled into the initramfs automatically and
+  `ufs_qcom_init()` returned `-EPROBE_DEFER` forever: the root filesystem
+  never appeared.  `nixos/hardware-nabu.nix` now lists `phy_qcom_qmp_ufs`,
+  `qcom_refgen_regulator`, `phy_qcom_qmp_combo` and `typec`, and
+  `configs/nabu.config` builds the pstore backends in so a boot that still
+  fails leaves its log in the ramoops region.
+
+Verified after the fix: the patch series still applies to a pristine tree with
+no rejects, the kernel builds, the *built* DTB contains the `refgen` node and
+both `refgen-supply` links, and the *built* initramfs contains
+`phy-qcom-qmp-ufs`, `qcom-refgen-regulator`, `ufs-qcom`, `ufshcd-core/pltfrm`,
+`msm`, `panel-novatek-nt36523`, `ktz8866`, `phy-qcom-qmp-combo` and `typec`
+(37 modules in total).
+
+Still not verified: a successful boot.  If the next on-device attempt fails
+again, the log is at `/sys/fs/pstore/console-ramoops-0` — boot the working
+`sm8150-fork` generation and read it there; that is what the pstore settings
+above are for.
 
 The rebase also needed three API updates that are folded into the patches: the
 nabu panel init sequence passes the DSI multi-context by address (upstream has

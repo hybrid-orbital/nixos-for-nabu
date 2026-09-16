@@ -1,5 +1,5 @@
 diff --git a/Documentation/devicetree/bindings/crypto/qcom,inline-crypto-engine.yaml b/Documentation/devicetree/bindings/crypto/qcom,inline-crypto-engine.yaml
-index db895c50e..d1b74666d 100644
+index db895c5..d1b7466 100644
 --- a/Documentation/devicetree/bindings/crypto/qcom,inline-crypto-engine.yaml
 +++ b/Documentation/devicetree/bindings/crypto/qcom,inline-crypto-engine.yaml
 @@ -21,6 +21,7 @@ properties:
@@ -11,7 +11,7 @@ index db895c50e..d1b74666d 100644
            - qcom,sm8550-inline-crypto-engine
            - qcom,sm8650-inline-crypto-engine
 diff --git a/arch/arm64/boot/dts/qcom/Makefile b/arch/arm64/boot/dts/qcom/Makefile
-index 6f33c4e2f..ca3710418 100644
+index 6f33c4e..ca37104 100644
 --- a/arch/arm64/boot/dts/qcom/Makefile
 +++ b/arch/arm64/boot/dts/qcom/Makefile
 @@ -352,6 +352,7 @@ dtb-$(CONFIG_ARCH_QCOM)	+= sm7325-nothing-spacewar.dtb
@@ -23,10 +23,10 @@ index 6f33c4e2f..ca3710418 100644
  dtb-$(CONFIG_ARCH_QCOM)	+= sm8150-sony-xperia-kumano-griffin.dtb
  dtb-$(CONFIG_ARCH_QCOM)	+= sm8250-hdk.dtb
 diff --git a/arch/arm64/boot/dts/qcom/pm8150.dtsi b/arch/arm64/boot/dts/qcom/pm8150.dtsi
-index d2568686a..18dfe2a5d 100644
+index d256868..18dfe2a 100644
 --- a/arch/arm64/boot/dts/qcom/pm8150.dtsi
 +++ b/arch/arm64/boot/dts/qcom/pm8150.dtsi
-@@ -104,6 +104,18 @@ channel@6 {
+@@ -104,6 +104,18 @@
  				qcom,pre-scaling = <1 1>;
  				label = "die_temp";
  			};
@@ -45,7 +45,7 @@ index d2568686a..18dfe2a5d 100644
  		};
  
  		pm8150_adc_tm: adc-tm@3500 {
-@@ -116,13 +128,21 @@ pm8150_adc_tm: adc-tm@3500 {
+@@ -116,13 +128,21 @@
  			status = "disabled";
  		};
  
@@ -69,10 +69,10 @@ index d2568686a..18dfe2a5d 100644
  			compatible = "qcom,pm8150-gpio", "qcom,spmi-gpio";
  			reg = <0xc000>;
 diff --git a/arch/arm64/boot/dts/qcom/pm8150b.dtsi b/arch/arm64/boot/dts/qcom/pm8150b.dtsi
-index b83be4b6c..2789775e9 100644
+index b83be4b..2789775 100644
 --- a/arch/arm64/boot/dts/qcom/pm8150b.dtsi
 +++ b/arch/arm64/boot/dts/qcom/pm8150b.dtsi
-@@ -106,6 +106,26 @@ pm8150b_temp: temp-alarm@2400 {
+@@ -106,6 +106,26 @@
  			#thermal-sensor-cells = <0>;
  		};
  
@@ -99,7 +99,7 @@ index b83be4b6c..2789775e9 100644
  		pm8150b_adc: adc@3100 {
  			compatible = "qcom,spmi-adc5";
  			reg = <0x3100>;
-@@ -132,11 +152,35 @@ channel@6 {
+@@ -132,11 +152,35 @@
  				label = "die_temp";
  			};
  
@@ -135,7 +135,7 @@ index b83be4b6c..2789775e9 100644
  		};
  
  		pm8150b_adc_tm: adc-tm@3500 {
-@@ -149,6 +193,14 @@ pm8150b_adc_tm: adc-tm@3500 {
+@@ -149,6 +193,14 @@
  			status = "disabled";
  		};
  
@@ -151,10 +151,10 @@ index b83be4b6c..2789775e9 100644
  			compatible = "qcom,pm8150b-gpio", "qcom,spmi-gpio";
  			reg = <0xc000>;
 diff --git a/arch/arm64/boot/dts/qcom/pm8150l.dtsi b/arch/arm64/boot/dts/qcom/pm8150l.dtsi
-index 3911d6d0d..a678f0058 100644
+index 3911d6d..a678f00 100644
 --- a/arch/arm64/boot/dts/qcom/pm8150l.dtsi
 +++ b/arch/arm64/boot/dts/qcom/pm8150l.dtsi
-@@ -86,6 +86,12 @@ channel@6 {
+@@ -86,6 +86,12 @@
  				qcom,pre-scaling = <1 1>;
  				label = "die_temp";
  			};
@@ -169,7 +169,7 @@ index 3911d6d0d..a678f0058 100644
  		pm8150l_adc_tm: adc-tm@3500 {
 diff --git a/arch/arm64/boot/dts/qcom/sm8150-wcd9340.dtsi b/arch/arm64/boot/dts/qcom/sm8150-wcd9340.dtsi
 new file mode 100644
-index 000000000..cde7e55bf
+index 0000000..cde7e55
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/sm8150-wcd9340.dtsi
 @@ -0,0 +1,86 @@
@@ -261,7 +261,7 @@ index 000000000..cde7e55bf
 +};
 diff --git a/arch/arm64/boot/dts/qcom/sm8150-xiaomi-nabu.dts b/arch/arm64/boot/dts/qcom/sm8150-xiaomi-nabu.dts
 new file mode 100644
-index 000000000..b7845863e
+index 0000000..b784586
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/sm8150-xiaomi-nabu.dts
 @@ -0,0 +1,1210 @@
@@ -1476,7 +1476,7 @@ index 000000000..b7845863e
 +        };
 +};
 diff --git a/arch/arm64/boot/dts/qcom/sm8150.dtsi b/arch/arm64/boot/dts/qcom/sm8150.dtsi
-index 0e1010962..7771cb016 100644
+index 0e10109..7bd39f6 100644
 --- a/arch/arm64/boot/dts/qcom/sm8150.dtsi
 +++ b/arch/arm64/boot/dts/qcom/sm8150.dtsi
 @@ -9,7 +9,9 @@
@@ -1489,7 +1489,7 @@ index 0e1010962..7771cb016 100644
  #include <dt-bindings/clock/qcom,rpmh.h>
  #include <dt-bindings/clock/qcom,dispcc-sm8150.h>
  #include <dt-bindings/clock/qcom,dsi-phy-28nm.h>
-@@ -1696,8 +1698,10 @@ spi13: spi@c8c000 {
+@@ -1696,8 +1698,10 @@
  			uart13: serial@c8c000 {
  				compatible = "qcom,geni-uart";
  				reg = <0 0x00c8c000 0 0x4000>;
@@ -1501,7 +1501,7 @@ index 0e1010962..7771cb016 100644
  				interrupts = <GIC_SPI 585 IRQ_TYPE_LEVEL_HIGH>;
  				status = "disabled";
  			};
-@@ -2072,9 +2076,7 @@ pcie1_phy: phy@1c0e000 {
+@@ -2072,9 +2076,7 @@
  		ufs_mem_hc: ufshc@1d84000 {
  			compatible = "qcom,sm8150-ufshc", "qcom,ufshc",
  				     "jedec,ufs-2.0";
@@ -1512,7 +1512,7 @@ index 0e1010962..7771cb016 100644
  			interrupts = <GIC_SPI 265 IRQ_TYPE_LEVEL_HIGH>;
  			phys = <&ufs_mem_phy>;
  			phy-names = "ufsphy";
-@@ -2083,6 +2085,8 @@ ufs_mem_hc: ufshc@1d84000 {
+@@ -2083,6 +2085,8 @@
  			resets = <&gcc GCC_UFS_PHY_BCR>;
  			reset-names = "rst";
  
@@ -1521,7 +1521,7 @@ index 0e1010962..7771cb016 100644
  			iommus = <&apps_smmu 0x300 0>;
  
  			clock-names =
-@@ -2093,8 +2097,7 @@ ufs_mem_hc: ufshc@1d84000 {
+@@ -2093,8 +2097,7 @@
  				"ref_clk",
  				"tx_lane0_sync_clk",
  				"rx_lane0_sync_clk",
@@ -1531,7 +1531,7 @@ index 0e1010962..7771cb016 100644
  			clocks =
  				<&gcc GCC_UFS_PHY_AXI_CLK>,
  				<&gcc GCC_AGGRE_UFS_PHY_AXI_CLK>,
-@@ -2103,8 +2106,7 @@ ufs_mem_hc: ufshc@1d84000 {
+@@ -2103,8 +2106,7 @@
  				<&rpmhcc RPMH_CXO_CLK>,
  				<&gcc GCC_UFS_PHY_TX_SYMBOL_0_CLK>,
  				<&gcc GCC_UFS_PHY_RX_SYMBOL_0_CLK>,
@@ -1541,7 +1541,7 @@ index 0e1010962..7771cb016 100644
  			freq-table-hz =
  				<37500000 300000000>,
  				<0 0>,
-@@ -2113,8 +2115,8 @@ ufs_mem_hc: ufshc@1d84000 {
+@@ -2113,8 +2115,8 @@
  				<0 0>,
  				<0 0>,
  				<0 0>,
@@ -1552,7 +1552,7 @@ index 0e1010962..7771cb016 100644
  
  			status = "disabled";
  		};
-@@ -2140,6 +2142,13 @@ ufs_mem_phy: phy@1d87000 {
+@@ -2140,6 +2142,13 @@
  			status = "disabled";
  		};
  
@@ -1566,7 +1566,7 @@ index 0e1010962..7771cb016 100644
  		cryptobam: dma-controller@1dc4000 {
  			compatible = "qcom,bam-v1.7.4", "qcom,bam-v1.7.0";
  			reg = <0 0x01dc4000 0 0x24000>;
-@@ -2603,6 +2612,13 @@ qup_spi13_default: qup-spi13-default-state {
+@@ -2603,6 +2612,13 @@
  				bias-disable;
  			};
  
@@ -1580,20 +1580,7 @@ index 0e1010962..7771cb016 100644
  			qup_i2c14_default: qup-i2c14-default-state {
  				pins = "gpio47", "gpio48";
  				function = "qup14";
-@@ -3478,12 +3494,6 @@ usb_2_hsphy: phy@88e3000 {
- 			resets = <&gcc GCC_QUSB2PHY_SEC_BCR>;
- 		};
- 
--		refgen: regulator@88e7000 {
--			compatible = "qcom,sm8150-refgen-regulator",
--				     "qcom,sdm845-refgen-regulator";
--			reg = <0x0 0x088e7000 0x0 0x60>;
--		};
--
- 		usb_1_qmpphy: phy@88e8000 {
- 			compatible = "qcom,sm8150-qmp-usb3-dp-phy";
- 			reg = <0 0x088e8000 0 0x3000>;
-@@ -3813,6 +3823,8 @@ mdss: display-subsystem@ae00000 {
+@@ -3813,6 +3829,8 @@
  
  			iommus = <&apps_smmu 0x800 0x420>;
  
@@ -1602,23 +1589,7 @@ index 0e1010962..7771cb016 100644
  			status = "disabled";
  
  			#address-cells = <2>;
-@@ -4007,7 +4019,6 @@ mdss_dsi0: dsi@ae94000 {
- 
- 				phys = <&mdss_dsi0_phy>;
- 
--				refgen-supply = <&refgen>;
- 
- 				status = "disabled";
- 
-@@ -4102,7 +4113,6 @@ mdss_dsi1: dsi@ae96000 {
- 
- 				phys = <&mdss_dsi1_phy>;
- 
--				refgen-supply = <&refgen>;
- 
- 				status = "disabled";
- 
-@@ -4325,6 +4335,32 @@ apps_smmu: iommu@15000000 {
+@@ -4325,6 +4343,32 @@
  			dma-coherent;
  		};
  
@@ -1651,7 +1622,7 @@ index 0e1010962..7771cb016 100644
  		remoteproc_adsp: remoteproc@17300000 {
  			compatible = "qcom,sm8150-adsp-pas";
  			reg = <0x0 0x17300000 0x0 0x4040>;
-@@ -4357,6 +4393,56 @@ glink-edge {
+@@ -4357,6 +4401,56 @@
  				qcom,remote-pid = <2>;
  				mboxes = <&apss_shared 8>;
  
@@ -1708,7 +1679,7 @@ index 0e1010962..7771cb016 100644
  				fastrpc {
  					compatible = "qcom,fastrpc";
  					qcom,glink-channels = "fastrpcglink-apps-dsp";
-@@ -4625,6 +4711,9 @@ wifi: wifi@18800000 {
+@@ -4625,6 +4719,9 @@
  		};
  	};
  

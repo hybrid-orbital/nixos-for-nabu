@@ -76,6 +76,13 @@
     "ufs_qcom"
     "ufshcd_pltfrm"
     "ufshcd_core"
+    # UFS PHY.  The pinned 6.17 fork kernel builds the QMP UFS PHY in
+    # (CONFIG_PHY_QCOM_QMP_UFS=y); `mainline-latest` has it as a module, and
+    # because the PHY is matched through the device tree it is *not* a symbol
+    # dependency of ufs_qcom, so it is not pulled in automatically: without it
+    # ufs_qcom_init() returns -EPROBE_DEFER forever and the root filesystem
+    # never appears.
+    "phy_qcom_qmp_ufs"
     # Early display stack: no simple-framebuffer node, the panel is driven by
     # the MSM/KMS DRM driver, so it must be present in the initramfs for
     # fbcon to light the screen before the rootfs is mounted.
@@ -84,6 +91,18 @@
     "msm"
     "panel_novatek_nt36523"
     "ktz8866"
+    # The DSI host requests the REFGEN regulator (see the refgen-supply links
+    # in the nabu device tree).  It is a module in `mainline-latest` and
+    # built-in in the fork kernel; without it here the DSI host defers and the
+    # panel never comes up, which leaves the whole boot without a console.
+    "qcom_refgen_regulator"
+    # USB-C: the USB core, HID and storage drivers are built in, but the combo
+    # PHY and the Type-C class driver are modules.  Keeping them in the
+    # initramfs means an attached keyboard still works if the boot fails before
+    # the root filesystem is mounted, which is the only interactive way to
+    # inspect such a failure on this device (there is no serial console).
+    "phy_qcom_qmp_combo"
+    "typec"
   ];
   boot.initrd.kernelModules = [
     # Keep display drivers available above, but let udev load them on demand.
