@@ -1,0 +1,90 @@
+diff --git a/drivers/clk/qcom/clk-regmap.c b/drivers/clk/qcom/clk-regmap.c
+index 92ac4e0..e4b5295 100644
+--- a/drivers/clk/qcom/clk-regmap.c
++++ b/drivers/clk/qcom/clk-regmap.c
+@@ -4,6 +4,7 @@
+  */
+ 
+ #include <linux/device.h>
++#include <linux/delay.h>
+ #include <linux/clk-provider.h>
+ #include <linux/regmap.h>
+ #include <linux/export.h>
+@@ -55,6 +56,15 @@ int clk_enable_regmap(struct clk_hw *hw)
+ 	else
+ 		val = rclk->enable_mask;
+ 
++	/*
++	 * Downstream workaround: without this settle time the enable write can
++	 * race the block and the clock stays "stuck in off state", which shows
++	 * up as a broken UFS controller or a dead DSI link.  Ported from the
++	 * sm8150-mainline/nabu kernels; harmless but adds 2.5 ms per regmap
++	 * clock toggle.
++	 */
++	udelay(2500);
++
+ 	return regmap_update_bits(rclk->regmap, rclk->enable_reg,
+ 				  rclk->enable_mask, val);
+ }
+@@ -79,6 +89,9 @@ void clk_disable_regmap(struct clk_hw *hw)
+ 	else
+ 		val = 0;
+ 
++	/* Same settle time as in clk_enable_regmap() (see above). */
++	udelay(2500);
++
+ 	regmap_update_bits(rclk->regmap, rclk->enable_reg, rclk->enable_mask,
+ 			   val);
+ }
+diff --git a/drivers/clk/qcom/gcc-sm8150.c b/drivers/clk/qcom/gcc-sm8150.c
+index a93d1f4..51eb975 100644
+--- a/drivers/clk/qcom/gcc-sm8150.c
++++ b/drivers/clk/qcom/gcc-sm8150.c
+@@ -3049,9 +3049,13 @@ static struct clk_branch gcc_ufs_phy_phy_aux_hw_ctl_clk = {
+ 	},
+ };
+ 
+-/* external clocks so add BRANCH_HALT_SKIP */
++/*
++ * The PHY drives these symbol clocks, so wait for the halt check
++ * instead of skipping it: skipping left the UFS link flaky and
++ * could wedge the controller.
++ */
+ static struct clk_branch gcc_ufs_phy_rx_symbol_0_clk = {
+-	.halt_check = BRANCH_HALT_SKIP,
++	.halt_check = BRANCH_HALT_DELAY,
+ 	.clkr = {
+ 		.enable_reg = 0x7701c,
+ 		.enable_mask = BIT(0),
+@@ -3062,9 +3066,13 @@ static struct clk_branch gcc_ufs_phy_rx_symbol_0_clk = {
+ 	},
+ };
+ 
+-/* external clocks so add BRANCH_HALT_SKIP */
++/*
++ * The PHY drives these symbol clocks, so wait for the halt check
++ * instead of skipping it: skipping left the UFS link flaky and
++ * could wedge the controller.
++ */
+ static struct clk_branch gcc_ufs_phy_rx_symbol_1_clk = {
+-	.halt_check = BRANCH_HALT_SKIP,
++	.halt_check = BRANCH_HALT_DELAY,
+ 	.clkr = {
+ 		.enable_reg = 0x770ac,
+ 		.enable_mask = BIT(0),
+@@ -3075,9 +3083,13 @@ static struct clk_branch gcc_ufs_phy_rx_symbol_1_clk = {
+ 	},
+ };
+ 
+-/* external clocks so add BRANCH_HALT_SKIP */
++/*
++ * The PHY drives these symbol clocks, so wait for the halt check
++ * instead of skipping it: skipping left the UFS link flaky and
++ * could wedge the controller.
++ */
+ static struct clk_branch gcc_ufs_phy_tx_symbol_0_clk = {
+-	.halt_check = BRANCH_HALT_SKIP,
++	.halt_check = BRANCH_HALT_DELAY,
+ 	.clkr = {
+ 		.enable_reg = 0x77018,
+ 		.enable_mask = BIT(0),

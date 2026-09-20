@@ -119,6 +119,21 @@ both `refgen-supply` links, and the *built* initramfs contains
 `msm`, `panel-novatek-nt36523`, `ktz8866`, `phy-qcom-qmp-combo` and `typec`
 (37 modules in total).
 
+Two further fixes come from the same on-device comparison, both still missing
+upstream:
+
+- `patches/0008-clk-qcom-ufs-dsi-clock-stability.patch`: a 2.5 ms settle time
+  before every regmap clock toggle and a real halt check
+  (`BRANCH_HALT_DELAY`) for the UFS PHY symbol clocks.  The nabu kernels have
+  carried these for a while; without them a clock can stay "stuck" in its
+  previous state, which costs idle power and shows up as a flaky UFS attach or
+  a DSI link that drops frames.
+- `patches/0001-...` also wires `vbus-supply = <&pm8150b_vbus>` into the Type-C
+  connector.  Upstream moved that supply from the port's `vdd-vbus-supply` to
+  the connector's `vbus-supply`; with neither present the PMIC Type-C driver
+  gets a dummy regulator (`qcom_pmic_typec_port.c`), never enables VBUS and OTG
+  devices are then only detected intermittently.
+
 Still not verified: a successful boot.  If the next on-device attempt fails
 again, the log is at `/sys/fs/pstore/console-ramoops-0` — boot the working
 `sm8150-fork` generation and read it there; that is what the pstore settings
