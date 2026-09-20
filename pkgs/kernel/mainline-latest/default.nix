@@ -69,15 +69,6 @@ let
         name = "nabu-runtime-fixes";
         patch = ./patches/0007-nabu-runtime-fixes.patch;
       }
-      {
-        # UFS/DSI clock stability: settle time before regmap clock toggles and
-        # a real halt check for the UFS PHY symbol clocks (see the patch header
-        # and the README).  Without it the controller can be left with a clock
-        # stuck in the previous state, which shows up as a stalled or flaky
-        # boot and as DSI link glitches.
-        name = "nabu-qcom-clock-stability";
-        patch = ./patches/0008-clk-qcom-ufs-dsi-clock-stability.patch;
-      }
     ];
 
     extraConfig = extraConfig;

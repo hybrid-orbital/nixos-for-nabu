@@ -119,20 +119,39 @@ both `refgen-supply` links, and the *built* initramfs contains
 `msm`, `panel-novatek-nt36523`, `ktz8866`, `phy-qcom-qmp-combo` and `typec`
 (37 modules in total).
 
-Two further fixes come from the same on-device comparison, both still missing
-upstream:
+One further fix comes from the same on-device comparison:
 
-- `patches/0008-clk-qcom-ufs-dsi-clock-stability.patch`: a 2.5 ms settle time
-  before every regmap clock toggle and a real halt check
-  (`BRANCH_HALT_DELAY`) for the UFS PHY symbol clocks.  The nabu kernels have
-  carried these for a while; without them a clock can stay "stuck" in its
-  previous state, which costs idle power and shows up as a flaky UFS attach or
-  a DSI link that drops frames.
-- `patches/0001-...` also wires `vbus-supply = <&pm8150b_vbus>` into the Type-C
+- `patches/0001-...` wires `vbus-supply = <&pm8150b_vbus>` into the Type-C
   connector.  Upstream moved that supply from the port's `vdd-vbus-supply` to
   the connector's `vbus-supply`; with neither present the PMIC Type-C driver
   gets a dummy regulator (`qcom_pmic_typec_port.c`), never enables VBUS and OTG
-  devices are then only detected intermittently.
+  devices are then only detected intermittently.  The supply provider
+  (`REGULATOR_QCOM_USB_VBUS`) is a module, so in the initramfs the Type-C port
+  probe just defers until the root filesystem is mounted; nothing in the boot
+  path depends on it.
+
+### Tried and reverted: the downstream clock workaround
+
+The nabu kernels also carry a pair of clock changes (a 2.5 ms settle time in
+`clk_enable_regmap()`/`clk_disable_regmap()` plus `BRANCH_HALT_SKIP` →
+`BRANCH_HALT_DELAY` for the UFS PHY symbol clocks) described as fixing "clock
+stuck in off/on state, broken UFS on boot and broken DSI on suspend/resume".
+Porting them made `mainline-latest` **unbootable on the device** (grey screen,
+then the display went dark), so the patch was dropped again:
+
+- the settle time runs inside `clk_enable_regmap()`, which the clock core calls
+  while holding `enable_lock` with interrupts disabled (`drivers/clk/clk.c`),
+  i.e. every toggle of every regmap clock (gcc, dispcc, gpucc, camcc, …) adds
+  2.5 ms of IRQ-off time during boot.  That is the most likely reason the boot
+  died;
+- the `BRANCH_HALT_DELAY` half is nearly a no-op in current kernels
+  (`clk_branch_wait()` just does `udelay(10)` and returns 0, it does *not* poll
+  the halt bit), so it is harmless on its own but also does not do what the
+  downstream commit describes.
+
+If this is picked up again, do it one half at a time, outside the IRQ-disabled
+path (for example as a delay in the UFS/DSI *drivers* rather than in the generic
+regmap clock helper), and verify with the diagnostics workflow below.
 
 Still not verified: a successful boot.  If the next on-device attempt fails
 again, the log is at `/sys/fs/pstore/console-ramoops-0` — boot the working
