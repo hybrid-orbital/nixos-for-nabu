@@ -125,6 +125,41 @@ For more detailed kernel initialisation tracing, add `initcall_debug` for a sing
 boot in the boot menu, keep `loglevel=7` and export the messages from the journal
 afterwards. Avoid restoring all debug and display-timing changes at the same time.
 
+## Comparing two kernels: the diagnostics bundle
+
+Comparing two kernels (for example the pinned `sm8150-fork` generation against
+`mainline-latest`) needs more than the journal, because an idle-power or
+display-stability difference is not visible in the log. Two scripts collect and
+compare that state:
+
+```sh
+# on the tablet, once per kernel generation, under the same workload
+sudo bash scripts/nabu-diagnostics.sh /var/tmp
+
+# on any machine, with both bundles copied over
+bash scripts/nabu-diagnostics-diff.sh nabu-diag-...-6.17.0-sm8150-... \
+                                    nabu-diag-...-7.2.3-...
+```
+
+`nabu-diagnostics.sh` only reads `/proc`, `/sys` and debugfs and writes a single
+directory: kernel and cmdline, the live device tree (`meta/fdt.dtb`), the pstore
+records of the previous boot, `clk_summary`, `pm_genpd_summary`,
+`regulator_summary`, per-device runtime PM state, cpuidle/cpufreq/thermal data,
+two `/proc/interrupts` snapshots 30 s apart with their delta, typec/USB state, DRM
+connector state and the power-supply properties.
+
+`nabu-diagnostics-diff.sh` prints only what differs in a way that matters for the
+open questions: clocks, regulators and power domains that stay enabled in one
+kernel, devices that are not runtime-suspended, cpuidle residency, thermal zones,
+the top wakeup sources, USB/typec, display and charger state — and it dumps the
+first lines of any `console-ramoops` record, which is where a boot that died before
+the root filesystem was mounted leaves its log (the kernel builds the pstore
+backends in for exactly this reason).
+
+Keep both runs comparable: same charger state, same WiFi/Bluetooth state and a
+similar workload. `NABU_DIAG_IRQ_INTERVAL` (default 30 s) sets the interrupt
+sampling window; `NABU_DIAG_DIFF_LIMIT` (default 30) caps each list in the diff.
+
 References: [kernel boot parameters](https://docs.kernel.org/admin-guide/kernel-parameters.html),
 [fbcon takeover behaviour](https://docs.kernel.org/fb/fbcon.html),
 [systemd 261 boot parameter notes](https://github.com/systemd/systemd/blob/v261/man/systemd.xml).

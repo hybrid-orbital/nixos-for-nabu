@@ -99,6 +99,35 @@ sudo journalctl -b -k --no-pager | grep -Ei 'drm|msm|dsi|dpu|panel|gmu|adreno|fi
 如需更详细的内核初始化跟踪，可在启动菜单中仅对一次启动添加 `initcall_debug`，
 保持 `loglevel=7`，再从 journal 导出消息。避免同时恢复全部 debug 和显示时序改动。
 
+## 对比两个内核：诊断采集脚本
+
+对比两个内核（例如固定的 `sm8150-fork` 代际与 `mainline-latest`）时，光看 journal
+不够：静态功耗差异、显示稳定性差异不会出现在日志里。两个脚本负责采集与对比：
+
+```sh
+# 在平板上，每个内核各采集一次，尽量保持相同负载
+sudo bash scripts/nabu-diagnostics.sh /var/tmp
+
+# 在任意机器上，把两个 bundle 拷过来后对比
+bash scripts/nabu-diagnostics-diff.sh nabu-diag-...-6.17.0-sm8150-... \
+                                    nabu-diag-...-7.2.3-...
+```
+
+`nabu-diagnostics.sh` 只读 `/proc`、`/sys` 和 debugfs，只写一个输出目录：内核与
+cmdline、当前设备树（`meta/fdt.dtb`）、上一次启动的 pstore 记录、`clk_summary`、
+`pm_genpd_summary`、`regulator_summary`、每个设备的运行时电源状态、
+cpuidle/cpufreq/thermal、相隔 30 秒的两份 `/proc/interrupts` 及差值、typec/USB
+状态、DRM connector 状态与供电属性。
+
+`nabu-diagnostics-diff.sh` 只打印与当前问题相关的差异：某个内核里仍然处于启用状态
+的时钟/稳压器/电源域、没有被运行时挂起的设备、cpuidle 停留时间、温度、唤醒源
+排行、USB/typec、显示与充电状态；并会打印 `console-ramoops` 记录的开头几行——
+根文件系统挂载之前就失败的启动会在这里留下日志（内核为此把 pstore 后端编进去了）。
+
+两次采集要保持可比：充电器状态、Wi-Fi/蓝牙开关、负载尽量一致。
+`NABU_DIAG_IRQ_INTERVAL`（默认 30 秒）控制中断采样窗口，
+`NABU_DIAG_DIFF_LIMIT`（默认 30）控制每段输出的行数上限。
+
 参考：[内核启动参数](https://docs.kernel.org/admin-guide/kernel-parameters.html)、
 [fbcon 接管行为](https://docs.kernel.org/fb/fbcon.html)、
 [systemd 261 启动参数说明](https://github.com/systemd/systemd/blob/v261/man/systemd.xml)。
