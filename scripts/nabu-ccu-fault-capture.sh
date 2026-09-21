@@ -134,7 +134,7 @@ timeline_for_iova() {
 	local iv="$1" dmesg="$2" trace="$3"
 	{
 		grep -E "gpu fault:.*$(iova_re "$iv")" "$dmesg" 2>/dev/null |
-			sed -n 's/^\[ *\([0-9][0-9.]*\)\].*/t=\1\tfault/p'
+			sed -n 's/^\[ *\([0-9][0-9.]*\)\].*/t=\1\tfault/p' || true
 		grep -E "$(iova_re "$iv")" "$trace" 2>/dev/null |
 			awk '{
 				ts=""; kind="";
@@ -149,8 +149,8 @@ timeline_for_iova() {
 				}
 				if (ts != "")
 					printf "t=%s\t%s %s %s\n", ts, kind, op, mmu
-			}'
-	} | sort -t= -k2 -n
+			}' || true
+	} | sort -t= -k2 -n || true
 }
 
 close_window_summary() { # reads a merged timeline on stdin
