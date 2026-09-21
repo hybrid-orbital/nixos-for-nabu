@@ -215,6 +215,31 @@ upstream fix on top of the revert (it applies to 7.2.6 unchanged), so the
 device keeps the bonded-mode behaviour of 7.2.3 while keeping the 7.2.6 GPU
 fixes.  A later kernel that lands a proper bonding fix can drop this patch.
 
+Why upstream reverted it in the first place (what this patch knowingly
+re-introduces):
+
+* the fix broke the **non-bonded** case.  Mohit Dsor (Qualcomm) reported on
+  2026-04-26 on a Thundercomm RB3 Gen2 with an lt9611uxc DSI→HDMI bridge: "720p60
+  it will be 720p30.  Even though the byte_clk is set correctly, the bridge is
+  receiving half the byte clock.  Some divider is getting set which is causing
+  the byte_clk to get half, ultimately fps to get half" — and reverting the
+  commit locally fixed it
+  (`https://lore.kernel.org/r/ae07cef84AmXK43H@hu-mdsor-hyd.qualcomm.com`,
+  clk_summary and DSI PHY register dumps followed on 2026-05-05);
+* Dmitry Baryshkov reverted it as `44784327815b` ("Clock divider is being
+  programmed incorrectly, resulting in the wrong display mode being selected.
+  Revert the offending commit, letting Neil to work on a better fix",
+  https://patchwork.freedesktop.org/patch/739459/), which reached 7.2.6 as the
+  stable backport `5de981b7db1f`;
+* that breakage is a single-DSI link driving an HDMI bridge, which is not what
+  this device does: the Pad 5 is bonded (`qcom,dual-dsi-mode` +
+  `qcom,sync-dual-dsi`, with DSI1 taking DSI0's PLL as parent), i.e. exactly the
+  configuration the reverted commit was fixing;
+* the promised replacement fix has not landed yet: the reverted 7.2.6 code is
+  still what mainline HEAD *and* the msm tree's `msm-next` branch ship (both
+  files fetched and diffed against the 7.2.6 one), so there is nothing better to
+  apply today.  When Neil Armstrong's follow-up lands, drop this patch.
+
 Why this and not one of the other 7.2.3 → 7.2.6 display changes (checked against
 the extracted upstream trees rather than inferred):
 
