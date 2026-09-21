@@ -419,6 +419,41 @@ default; that mechanism alone would leave its old `msm` in use. Do not attempt
 to unload the active display's `msm`
 module or just copy a `.ko` into an old initrd.
 
+#### The swap is not the kernel's own build (measured)
+
+`nabu-msm-module` compiles `drivers/gpu/drm/msm` through `make M=... modules`
+against `${kernel.dev}`. That is a *different compilation* from the one the
+shipped `msm.ko` went through. Comparing the two artefacts of the same locked
+kernel (same tarball, same eight patches, same `.config`, same GCC 15.3.0) with
+`pkgs/kernel/mainline-latest/module-verify.py`:
+
+| | shipped `msm.ko` | rebuilt by `msm-module.nix` |
+| --- | --- | --- |
+| size | 2480712 B | 2549808 B |
+| `.text` | 705484 B | 779840 B |
+| `.rodata` | 408573 B | 397027 B |
+| functions with a different size | - | 2042 of 2044 |
+| `modinfo` | `intree=Y` | absent |
+| `__offset_CTL.part.0` | `brk #0x800` | `paciasp; stp x29, x30, [sp, #-0x10]!; mov x29, sp; brk #0x800` |
+
+`msm` is the display driver and is loaded from the initrd before the root
+filesystem exists, so a swapped module is a different driver, not the shipped
+driver plus one register-list change. A single boot from it cannot decide
+whether the GBIF candidate fixes, breaks or does nothing to the CCU faults - a
+black panel with an otherwise healthy system is exactly as likely to come from
+the rebuild as from the patch.
+
+Run the shortcut as a pair of boots instead, which is what
+`nabu.debug.msmSwap.variant` in `nixos/debug/a640-gbif-fix.nix` selects:
+
+* `"baseline"` - the unmodified rebuild (`nabu-msm-modules-baseline`: the same
+  path with no extra patch), booted once;
+* `"gbif-fix"` - the rebuild with the candidate, booted once (the default).
+
+If the baseline boot is black as well, the module shortcut - not the patch - is
+what has to be looked at first. A conclusion about hardware needs the
+full-kernel form below, which *is* the kernel's own build.
+
 The alternative **full-kernel** experiment uses the same patch with normal
 NixOS kernel packaging, instead of importing `a640-gbif-fix.nix`:
 

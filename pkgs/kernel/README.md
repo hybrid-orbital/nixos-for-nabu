@@ -315,6 +315,23 @@ chasing a driver bug only the driver under test has to be compiled:
 nix build .#nabu-msm-module          # ~30 s; result/ then holds msm.ko
 ```
 
+**This shortcut does not reproduce the kernel's own module.**  Measured on
+mainline-latest (7.2.6): same source, same patches, same `.config`, same GCC
+15.3.0, yet all 2044 functions come out with a different size (`.text` 705484 ->
+779840, `.rodata` 408573 -> 397027, `intree=Y` gone), e.g. `__offset_CTL.part.0`
+is `brk #0x800` in the shipped module and `paciasp; stp x29, x30; mov x29, sp;
+brk #0x800` here.  `msm` is the display driver and is loaded from the initrd, so
+a swapped module is a different driver, not the shipped one plus a patch: one
+boot from it cannot attribute a black panel, a fault or a fix to the patch.
+
+Run it as a *pair* of boots instead.  `nabu-msm-modules-baseline` is the same
+build with no extra patch - boot it once and the candidate
+(`nabu-msm-modules-gbif-fix`, `nabu-msm-modules-debug`) once.  If the baseline is
+black as well, the difference comes from rebuilding the module, not from the
+patch.  `nixos/debug/a640-gbif-fix.nix` selects between the two with
+`nabu.debug.msmSwap.variant`.  A conclusion about hardware needs the
+full-kernel form (`boot.kernelPatches`), which *is* the kernel's build.
+
 `pkgs/kernel/mainline-latest/msm-module.nix` unpacks the kernel source, applies
 the same patch series the kernel package applies, and then runs
 `make -C ${kernel.dev}/lib/modules/<version>/build M=… modules` against the
