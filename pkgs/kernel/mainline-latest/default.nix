@@ -69,6 +69,14 @@ let
         name = "nabu-runtime-fixes";
         patch = ./patches/0007-nabu-runtime-fixes.patch;
       }
+      {
+        # The UBWC rework made the GPU driver trust the UBWC configuration the
+        # boot firmware advertises; on nabu that makes the Adreno 640's CCU
+        # read unmapped addresses and the hangcheck reset the GPU under load.
+        # Pin the values the pre-rework driver (and the 6.17 fork kernel) used.
+        name = "nabu-a640-ubwc";
+        patch = ./patches/0009-drm-msm-a640-force-known-good-ubwc.patch;
+      }
     ];
 
     extraConfig = extraConfig;

@@ -153,6 +153,38 @@ If this is picked up again, do it one half at a time, outside the IRQ-disabled
 path (for example as a delay in the UFS/DSI *drivers* rather than in the generic
 regmap clock helper), and verify with the diagnostics workflow below.
 
+### Adreno 640 UBWC: pinned to the pre-rework values
+
+Under load (Firefox/WebRender) this kernel flooded dmesg with
+
+```
+*** gpu fault: ttbr0=... iova=0000000101600000 dir=READ type=TRANSLATION source=CCU
+```
+
+and the ring hangcheck then recovered the GPU (`hangcheck recover!`,
+`offending task: firefox:gdrv0`), which the client sees as a device reset and a
+short black screen.  The faulting block is the CCU, i.e. the part of the GPU
+that walks *compressed* (UBWC) surfaces, so the addresses are computed from the
+UBWC parameters.
+
+Since the upstream UBWC rework, the GPU driver trusts the UBWC configuration
+advertised by the boot firmware (`qcom_ubwc_config_get_data()` in
+`a6xx_gpu.c`); before that rework it overrode the values with swizzle `0x6` and
+highest bank bit `15` for every non-A8xx GPU — which is also what the pinned
+6.17 fork kernel boots this device with, without those faults.  On the Pad 5 the
+firmware's values do not produce working compressed-surface addressing, so
+`patches/0009-drm-msm-a640-force-known-good-ubwc.patch` reinstates the two
+pre-rework values for `adreno_is_a640()` only; everything else still comes from
+the firmware's configuration.
+
+The display side is left alone: the same values are only forced into the GPU's
+own registers, exactly like the 6.17 kernel, which renders and scans out fine.
+
+When this is revisited, the useful checks are the ones the patch makes cheap:
+`dmesg | grep -i 'gpu fault'` under the same Firefox workload (should be empty),
+and reading the parameters back through `MSM_PARAM_UBWC_SWIZZLE` /
+`MSM_PARAM_HIGHEST_BANK_BIT` if a tool for that is available.
+
 Still not verified: a successful boot.  If the next on-device attempt fails
 again, the log is at `/sys/fs/pstore/console-ramoops-0` — boot the working
 `sm8150-fork` generation and read it there; that is what the pstore settings
