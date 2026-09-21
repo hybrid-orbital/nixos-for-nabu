@@ -1,10 +1,10 @@
 # Take the kernel's own `modules` output and swap in a debug build of msm.ko.
 #
-# Used together with `system.replaceDependencies.replacements` to run an
-# instrumented GPU driver on the device without rebuilding the kernel; `msm` is
-# loaded from the initrd, so replacing the file in the modules output and
-# rebuilding the system (which rebuilds the initrd from that same output) is how
-# the replacement actually takes effect.
+# Feed this output into `system.modulesTree` to run a replacement GPU driver
+# without rebuilding the kernel (see nixos/debug/a640-gbif-fix.nix). `msm` is
+# loaded from the initrd, so both initrd and stage-2 module aggregation must
+# consume this output. `system.replaceDependencies` skips the initrd by default
+# and does not replace module bytes inside its compressed archive.
 #
 # The directory name is taken from the kernel derivation instead of being
 # hard-coded, and both sides are checked, so a mismatch (wrong kernel selected,

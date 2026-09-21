@@ -6,6 +6,14 @@ user sees as the screen glitching, occasionally going black and then redrawing.
 `sm8150-fork` (6.17) does not reproduce it, which is why it is still the
 default kernel.
 
+**Source audit update (2026-09-21):** §12 identifies a concrete A640/A680
+GBIF initialization omission and provides an opt-in, build-tested patch.
+Its connection to the observed CCU faults is **not yet hardware-confirmed**.
+The original captures do not establish that the faulting address was previously
+unmapped: the analyzer matches starting addresses rather than intervals, and
+some older `ptmap` probes recorded the SG pointer as `len`. See §12 before
+using the exclusion table as proof of a root cause.
+
 This document is written for somebody who will work on the kernel side.  It
 records what was measured, what was ruled out and how, the code paths that can
 remove a GPU VA mapping, and the instrumentation that should be added next.  It
@@ -14,8 +22,9 @@ deliberately separates *measured* facts from *inferred* ones.
 中文要点：GPU（CCU）会去读没有有效 PTE 的 VA，每次"第一次 fault"都会触发一次 GPU
 recovery。已排除：用户态 VM_BIND 管理、GEM shrinker 回收、页表整体销毁、UBWC 地址
 计算、以及 fence/拆映射代码差异（与不复现的 6.17 fork 逐字相同）。剩下最可能的解释
-是"内核在 BO 的 fence 之后拆掉 VA，而硬件仍有对该 VA 的读取"，但要定位到具体的一次
-拆除，需要在内核里加一段 dump（第 7 节），或者做 6.19→7.2 的版本 bisect（第 9 节）。
+是"内核在 BO 的 fence 之后拆掉 VA，而硬件仍有对该 VA 的读取"，但这是原调查的推测，
+现有 trace 尚不能证实。后续源码审计发现 A640/A680 的 GBIF 初始化漏配，并提供了
+已编译通过的候选补丁及 A/B 步骤（第 12 节）；是否修复本次 fault 仍需真机验证。
 
 ## 1. Environment
 
@@ -154,16 +163,16 @@ gated by pinning.
 
 ## 7. What is left
 
-The GPU reads a VA whose PTE is gone, in a driver whose mapping code is the same
-as the one that does not fault on 6.17, with the removal done by the kernel's
-own BO lifetime (after the BO's fences signalled).  Three hypotheses remain,
-and each has a different fix, so the next step is to *discriminate* them from
-inside the kernel:
+The SMMU reports a translation fault. This alone does not establish whether
+the PTE was removed, never installed, or disagrees with the hardware view.
+The following three hypotheses require different fixes and must be
+distinguished using mapping history and the driver's page-table view:
 
 * **H1 — the mapping was removed while the GPU still referenced it.**
-  `msm_gem_close()` only waits for `dma_resv` fences; a fence means "the CP
-  retired the job", not "the GPU (CCU/caches) has finished every access".  This
-  is the class upstream fixed for the *hung submit* path in 7.2
+  `msm_gem_close()` waits for `dma_resv` fences. If hardware accesses persist
+  after completion, their ordering must be investigated; the normal A6xx
+  completion packet includes `CACHE_FLUSH_TS`. A related, but distinct,
+  lifetime bug was fixed in the *hung submit* path in 7.2
   (`dc64cf9d7142` "Recover HW before retire hung submit": retiring the submit
   frees BOs the GPU is still reading).  Fix direction: quiesce (or defer the
   teardown) before removing the PTE.
@@ -173,10 +182,9 @@ inside the kernel:
   UMD; kernel can only detect it (and must **not** be fooled into a recovery
   loop).
 * **H3 — the driver's page table says the VA *is* mapped, but the SMMU walk
-  faults.**  Then either the page-table memory was reused/corrupted (see the
-  `prealloc` mechanism: `msm_iommu_pagetable_prealloc_allocate()` /
-  `…_cleanup()` handing page-table pages back while PTEs still point at them),
-  or the SMMU is walking stale memory.  Fix direction: page-table lifetime.
+  faults.**  Investigate page-table lifetime, corruption, visibility and TLB
+  maintenance. The MSM custom `prealloc` mechanism is only installed for
+  unmanaged VM_BIND VMs, so it does not explain a managed GL VM fault.
 
 ## 8. Instrumentation to add (the actual next step)
 
@@ -192,9 +200,9 @@ fault of a VM prints, before the recovery runs:
    (`drm_gpuva_find_first(vm, iova, 1)`) plus its `drm_gpuva_flags`, size and the
    owner BO (`gem.obj`: its `pin_count`, `madv`, `name`) **and** the driver's own
    `msm_gem_vma.mapped` flag;
-3. the page-table translation as the driver's io-pgtable sees it — needs a
-   helper, e.g. `msm_iommu_pagetable_iova_to_phys(mmu, iova)` calling
-   `io_pgtable_ops->iova_to_phys()`, printed next to the SMMU's view.
+3. the page-table translation as the driver's io-pgtable sees it. The 7.2.6
+   source already has `msm_iommu_pagetable_walk(mmu, iova, ptes)` for collecting
+   the four walk entries; a new `iova_to_phys` helper is not essential.
 
 That single dump resolves §7 by inspection:
 
@@ -202,12 +210,14 @@ That single dump resolves §7 by inspection:
 | --- | --- | --- |
 | exists, `mapped = false` | no translation | mapping was removed → the log's last matching entry says *who and when* (H1: compare the removal time with the fault time and with the BO's fence) |
 | exists, `mapped = true` | translation present | the SMMU/hardware disagrees with the page table → H3 |
-| no VMA | no translation | the VA was never mapped in this VM → H2 |
+| no VMA | no translation | absent now: either already removed or never mapped; distinguish using interval history |
 
-Constraints: the SMMU fault handler runs in interrupt context, so this must be a
-plain, non-blocking lookup (the vm-log ring is already written under
-`vm->mmu_lock`; `iova_to_phys` on the io-pgtable is a walk, keep it to the first
-fault only).
+Constraints: an interrupt-context dump cannot simply walk the GPUVA tree or
+page tables without lifetime and concurrency protection. In the managed GL
+path, `vm_log()` does **not** require `vm->mmu_lock`; the source only asserts
+that lock for unmanaged VMs. A non-blocking lookup alone is not safe. Any new
+dump must establish VM identity/lifetime and the appropriate locking, or use
+the existing deferred crash-state capture path with its locking constraints.
 
 ### 8.2 Cheap alternatives that need no patch
 
@@ -282,3 +292,182 @@ while the mapping/fence plumbing is byte-identical, and the request for the
 dump from §8.1 (or guidance on which of H1–H3 is anticipated).  Worth linking:
 the recovery ordering fix `dc64cf9d7142`, the evict-list fix `8a61c211d0d5`, and
 the VM/ring RCU fix `01c8d1f385f7` as the class of bug this looks like.
+
+## 12. Source audit and candidate patch: missing A640 CX GBIF setup
+
+### 12.1 What is established in the source
+
+The audited 7.2.6 tarball is byte-identical to the source used by the locked
+Nix derivation (SHA-256
+`039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606`).
+Comparison with **upstream v6.17** reveals an initialization regression outside
+GEM teardown. This comparison is not a claim that every file in the downstream
+`v6.17.0-sm8150` tree is identical to upstream.
+
+* In upstream v6.17, `adreno/a6xx_gpu.c:hw_init()` writes
+  `GBIF_QSB_SIDE0..3 = 0x00071620` for `adreno_is_a640_family()` as well as
+  the other supported GBIF families.
+* In 7.2.6, that block only handles `adreno_is_a610_family()`. GMU devices
+  instead rely on `adreno/a6xx_gmu.c:a6xx_gmu_fw_start()` iterating
+  `adreno_gpu->info->a6xx->gbif_cx` before starting the GMU.
+* `adreno_is_a640_family()` means `ADRENO_6XX_GEN2`: A640 (`0x06040001`,
+  the nabu) and A680 (`0x06080001`). Both catalog entries have
+  `.hwcg = a640_hwcg` and `.protect = &a630_protect` but **no `.gbif_cx`**.
+  A NULL list makes the new loop skip all four writes.
+* The correct four values already exist in `a6xx_catalog.c:a640_gbif`.
+  Adding `.gbif_cx = a640_gbif` to the two entries restores their old
+  settings through the current initialization path. It does not change
+  allocation, PTEs, fence completion, cache flush packets or recovery.
+
+This omission is a concrete source defect, rather than a proposed arbitrary
+GPU delay. It is still a **candidate explanation for the captured faults**:
+we have neither a register readback from the faulting device nor a patched
+boot proving that this defect caused those accesses. The evidence does not
+justify claiming that GBIF generates a particular malformed address.
+
+The upstream discussion is useful context: the
+[original review](https://lists.openwall.net/linux-kernel/2025/11/12/663)
+identified missing A640/A650 family entries; the
+[author acknowledged it](https://lists.openwall.net/linux-kernel/2025/11/12/1899).
+The [v4 cover letter](https://lists.infradead.org/pipermail/linux-arm-kernel/2025-November/1081359.html)
+says that issue was addressed, but the actual 7.2.6 catalog still omits the
+GEN2 entries. The shipped source, not that cover-letter claim, is the basis
+of this patch.
+
+The patch is
+[`experimental/0001-drm-msm-a6xx-restore-a640-gbif.patch`](../pkgs/kernel/mainline-latest/experimental/0001-drm-msm-a6xx-restore-a640-gbif.patch).
+It is deliberately outside `patches/`, whose wildcard is automatically
+applied by the baseline module builder. Thus the baseline and candidate remain
+available for a controlled comparison.
+
+### 12.2 Corrections to the original inference
+
+The original analyzer in `scripts/nabu-ccu-fault-capture.sh` searches for exact
+`iova=` matches. A fault at `v` must instead be compared to **every interval**
+`start <= v < start + range` in the **same VM**, in timestamp order. A missing
+exact-start event does not mean the VA was never mapped. The old `ptmap`
+probe in capture A also recorded `x2` (the SG pointer) as `len`; use the
+`vmop range` values for that capture. The current probe uses `x4` correctly.
+Mapping entry probes describe attempts, not successful return values.
+
+Re-reading the actual long capture (`/tmp/ccu-real2`, VM
+`0xffff0000ae190800`, MMU `0xffff000091322880`, TTBR `0x1a9a0a000`) illustrates
+why this matters:
+
+| Fault time / address | Earlier interval events in that VM |
+| --- | --- |
+| 2085.469026 / `0x109c90000` | map of `0x109c9d000`, range `0x280000`, at 2085.468; fault is **below** this new BO, not inside it |
+| 2095.194387 / `0x10d6c0000` | close of `0x10d44d000`, range `0x280000`, at 2095.058 **covers** the fault; another BO begins at `0x10d6cd000` |
+| 2166.383898 / `0x102300000` | close of `0x10208d000`, range `0x280000`, at 2164.152 **covers** the fault; another BO begins at `0x10230d000` |
+
+All 38 distinct fault addresses in that capture are 64 KiB aligned. Some are
+the 64 KiB round-down of another BO's start. This is worth investigating, but
+is not proof that BO alignment is the bug or that the GPU accessed the BO
+which was closed. Increasing every BO's alignment could hide an invalid
+access by changing VA layout; it is not the fix supplied here.
+
+Two other source-level qualifications:
+
+* The custom `prealloc` allocator is installed only under
+  `if (!kernel_managed)` in `msm_iommu_pagetable_create()`. Its cleanup is not
+  the allocator for the legacy GL VM described in this report.
+* Equal fence-accounting code does not prove equal hardware completion.
+  Conversely, upstream v6.17 and 7.2.6 both end `a6xx_submit()` with the
+  `CACHE_FLUSH_TS` packet; it is inaccurate to infer that these fences only
+  mean the CP has parsed commands. Additional cache ordering would require
+  evidence of the specific outstanding transaction.
+
+### 12.3 Build and boot the isolated candidate
+
+Build on ARM64 Linux, or from another host with an ARM64 remote builder:
+
+```sh
+nix build path:.#packages.aarch64-linux.nabu-msm-module-gbif-fix \
+  --out-link result-msm-gbif
+nix build path:.#packages.aarch64-linux.nabu-msm-modules-gbif-fix \
+  --out-link result-modules-gbif
+```
+
+`path:.` also includes new files before they have been added to Git. After
+tracking them, the usual `.#packages.aarch64-linux.…` form works as well.
+The first output contains `msm.ko`; the second is the original kernel modules
+output with that module replaced. Both reuse the **baseline** kernel's
+`kernel.dev`, so this experiment does not require a full kernel compilation.
+
+For a test generation, add to `nixos/configuration.nix`:
+
+```nix
+nabu.kernel.name = "mainline-latest";
+imports = [ ./debug/a640-gbif-fix.nix ./debug/ccu-capture.nix ];
+```
+
+Merge those imports with any existing list. Remove any other replacement of
+`kernel.modules` for this run. Then, on the device:
+
+```sh
+sudo nixos-rebuild boot --flake path:.#nabu
+sudo reboot
+```
+
+Use the appropriate configuration name for an impermanent installation.
+The optional module rejects `sm8150-fork` and builds against
+`config.boot.kernelPackages.kernel`. It overrides `system.modulesTree`,
+preserving `boot.extraModulePackages`, so normal module aggregation / depmod
+and the initrd's `makeModulesClosure` both consume the replacement.
+The locked nixpkgs excludes the initrd from `system.replaceDependencies` by
+default; that mechanism alone would leave its old `msm` in use. Do not attempt
+to unload the active display's `msm`
+module or just copy a `.ko` into an old initrd.
+
+The alternative **full-kernel** experiment uses the same patch with normal
+NixOS kernel packaging, instead of importing `a640-gbif-fix.nix`:
+
+```nix
+nabu.kernel.name = "mainline-latest";
+boot.kernelPatches = [ {
+  name = "a640-gbif-initialization";
+  patch = ../pkgs/kernel/mainline-latest/experimental/0001-drm-msm-a6xx-restore-a640-gbif.patch;
+} ];
+```
+
+That relative path assumes the snippet is in `nixos/configuration.nix`.
+Do not combine the full-kernel and module-replacement methods.
+
+### 12.4 Validation and acceptance criteria
+
+Completed locally / on the configured ARM64 Linux builder:
+
+* Applied the original eight patches and this candidate to the locked 7.2.6
+  source with `patch -p1 -F0 --forward`: all applied, no fuzz.
+* `checkpatch.pl --no-tree --strict --no-signoff`: zero errors or warnings.
+  This local candidate has no invented author sign-off or hardware Tested-by.
+* Built `nabu-msm-module-gbif-fix` with the existing Nix module derivation:
+  compilation, MODPOST and link succeeded. Vermagic:
+  `7.2.6 SMP preempt mod_unload aarch64`.
+* Built `nabu-msm-modules-gbif-fix`, including compression and replacement of
+  `lib/modules/7.2.6/kernel/drivers/gpu/drm/msm/msm.ko.xz`.
+
+The module artifact is
+`/nix/store/z21lxv7waxn8rl0qdd5znmny6jqmxaq4-nabu-drm-module-7.2.6/msm.ko`,
+SHA-256 `d79f1905fb8e1397873d35d4186f604bd33f9e1d0b06a979e3eb27f4b7a94719`.
+The baseline kernel config has both `CONFIG_MODVERSIONS` and
+`CONFIG_MODULE_SIG` disabled. Matching vermagic alone would not establish
+compatibility with arbitrary other kernels; use the matching build tree.
+
+**Not performed:** booting nabu, full-kernel build, initrd boot verification,
+GPU workload testing, or suspend/resume. Keep a known-good boot generation.
+Compare an unpatched 7.2.6 boot and a patched boot using the same userspace,
+firmware, environment and workload, preferably multiple cold boots. Exercise
+shell startup, Firefox, and suspend/resume for at least the original 36-minute
+capture duration. Count first faults and recoveries, not just rate-limited
+fault messages. Revert the import to reproduce the baseline if the candidate
+looks clean.
+
+If a fault still occurs, preserve the first `/sys/class/devcoredump/devcd*/data`
+before it expires, plus the four capture files in §10. The existing A6xx
+coredump register list includes `0x3c00..0x3c0b`; `GBIF_QSB_SIDE0..3` are GPU
+register offsets `0x3c03..0x3c06` and should contain `0x00071620` after this
+patch. Such a dump checks whether the initialization change took effect;
+it does not by itself validate the fault hypothesis. If the registers are
+correct but faults persist, continue with interval-aware first-fault and
+command-stream analysis rather than declaring this patch a fix for the storm.

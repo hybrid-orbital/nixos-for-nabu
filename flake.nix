@@ -138,12 +138,27 @@
             msmModuleDebug = msmModule.override {
               extraShell = builtins.readFile ./pkgs/kernel/mainline-latest/debug/vm-log-dmesg.sh;
             };
+            # Isolate the A640/A680 GBIF initialization fix for hardware A/B
+            # testing. Reuse the unmodified kernel.dev instead of rebuilding
+            # the whole kernel just to test two catalog entries.
+            msmModuleGbifFix = msmModule.override {
+              extraPatches = [
+                ./pkgs/kernel/mainline-latest/experimental/0001-drm-msm-a6xx-restore-a640-gbif.patch
+              ];
+            };
           in
           {
             nabu-msm-module = msmModule;
             nabu-msm-module-debug = msmModuleDebug;
+            nabu-msm-module-gbif-fix = msmModuleGbifFix;
+            nabu-msm-modules-gbif-fix = nixpkgs.legacyPackages.${system}.callPackage
+              ./pkgs/kernel/mainline-latest/msm-modules-debug.nix
+              {
+                kernel = kernelFor "mainline-latest";
+                module = msmModuleGbifFix;
+              };
             # The kernel's `modules` output with that module swapped in, for
-            # `system.replaceDependencies.replacements` on the device.
+            # `system.modulesTree` (including initrd module aggregation).
             nabu-msm-modules-debug = nixpkgs.legacyPackages.${system}.callPackage
               ./pkgs/kernel/mainline-latest/msm-modules-debug.nix
               {

@@ -1,0 +1,39 @@
+Subject: [PATCH] drm/msm/a6xx: restore CX GBIF configuration for A640 and A680
+
+The CX GBIF setup was moved from hw_init() to a6xx_gmu_fw_start(),
+using the gbif_cx register list in the GPU catalog.  The former code
+covered adreno_is_a640_family(), but neither GEN2 entry (A640/A680)
+has a gbif_cx list.  Both now skip programming GBIF_QSB_SIDE0..3.
+
+Attach the existing a640_gbif list to both entries to restore the four
+0x00071620 writes through the new initialization path.  Other families
+and the GX client QoS configuration are unchanged.
+
+This fixes an initialization omission visible in the 7.2.6 source.
+Whether it also fixes the nabu CCU translation faults needs hardware
+A/B testing; no Tested-by or claim of a confirmed fault fix is made.
+
+Link: https://lists.openwall.net/linux-kernel/2025/11/12/663
+---
+ drivers/gpu/drm/msm/adreno/a6xx_catalog.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/gpu/drm/msm/adreno/a6xx_catalog.c b/drivers/gpu/drm/msm/adreno/a6xx_catalog.c
+--- a/drivers/gpu/drm/msm/adreno/a6xx_catalog.c
++++ b/drivers/gpu/drm/msm/adreno/a6xx_catalog.c
+@@ -983,6 +983,7 @@
+ 		.a6xx = &(const struct a6xx_info) {
+ 			.hwcg = a640_hwcg,
+ 			.protect = &a630_protect,
++			.gbif_cx = a640_gbif,
+ 			.gmu_cgc_mode = 0x00020202,
+ 			.prim_fifo_threshold = 0x00180000,
+ 		},
+@@ -1106,6 +1107,7 @@
+ 		.a6xx = &(const struct a6xx_info) {
+ 			.hwcg = a640_hwcg,
+ 			.protect = &a630_protect,
++			.gbif_cx = a640_gbif,
+ 			.gmu_cgc_mode = 0x00020202,
+ 			.prim_fifo_threshold = 0x00200200,
+ 		},

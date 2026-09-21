@@ -299,6 +299,15 @@ a capture started by hand also sees a fault within seconds.
 
 ### Fast iteration: building only the DRM modules
 
+For the build-tested A640/A680 GBIF initialization candidate, use
+`nabu-msm-module-gbif-fix` / `nabu-msm-modules-gbif-fix` and the opt-in
+`nixos/debug/a640-gbif-fix.nix` module. See
+[the source audit and A/B procedure](../../docs/kernel-gpu-fault.md#12-source-audit-and-candidate-patch-missing-a640-cx-gbif-setup).
+It restores a missing register list; fixing the observed CCU faults still
+needs hardware validation. The opt-in module overrides `system.modulesTree`
+so the initrd also gets the candidate. `system.replaceDependencies` alone
+does not do this: the locked nixpkgs excludes the initrd by default.
+
 A full `nix build .#nabu-kernel-mainline-latest` is tens of minutes; while
 chasing a driver bug only the driver under test has to be compiled:
 
