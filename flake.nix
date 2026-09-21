@@ -130,49 +130,26 @@
             #     }'
             #
             # This is an *external* module build and does not reproduce the
-            # kernel's own msm.ko (docs/kernel-gpu-fault.md, section 12.3).
-            # Compare two builds made this way with each other, and use the
-            # kernel-patch route for conclusions about hardware.
+            # kernel's own msm.ko (docs/kernel-gpu-fault.md, section 12.3), and a
+            # boot with it leaves the panel dark, so it is for build-time
+            # iteration and for the vm-log instrumentation below - not for
+            # judging what a patch does on the device.  A patch that has to
+            # reach the device belongs to the kernel package
+            # (pkgs/kernel/mainline-latest/patches/).
             msmModule = nixpkgs.legacyPackages.${system}.callPackage
               ./pkgs/kernel/mainline-latest/msm-module.nix
               {
                 kernel = kernelFor "mainline-latest";
-              };
-            # The `modules` output with the *unmodified* rebuild swapped in: the
-            # control for an A/B run.  Boot this once and the candidate once; if
-            # this one is black as well, the difference comes from rebuilding
-            # the module, not from the patch.
-            msmModulesBaseline = nixpkgs.legacyPackages.${system}.callPackage
-              ./pkgs/kernel/mainline-latest/msm-modules-debug.nix
-              {
-                kernel = kernelFor "mainline-latest";
-                module = msmModule;
               };
             # Same module with `debug/vm-log-dmesg.sh` applied, i.e. with the
             # msm.vm_log_dmesg parameter that prints every VM map/unmap op.
             msmModuleDebug = msmModule.override {
               extraShell = builtins.readFile ./pkgs/kernel/mainline-latest/debug/vm-log-dmesg.sh;
             };
-            # Isolate the A640/A680 GBIF initialization fix for hardware A/B
-            # testing. Reuse the unmodified kernel.dev instead of rebuilding
-            # the whole kernel just to test two catalog entries.
-            msmModuleGbifFix = msmModule.override {
-              extraPatches = [
-                ./pkgs/kernel/mainline-latest/experimental/0001-drm-msm-a6xx-restore-a640-gbif.patch
-              ];
-            };
           in
           {
             nabu-msm-module = msmModule;
             nabu-msm-module-debug = msmModuleDebug;
-            nabu-msm-module-gbif-fix = msmModuleGbifFix;
-            nabu-msm-modules-baseline = msmModulesBaseline;
-            nabu-msm-modules-gbif-fix = nixpkgs.legacyPackages.${system}.callPackage
-              ./pkgs/kernel/mainline-latest/msm-modules-debug.nix
-              {
-                kernel = kernelFor "mainline-latest";
-                module = msmModuleGbifFix;
-              };
             # The kernel's `modules` output with that module swapped in, for
             # `system.modulesTree` (including initrd module aggregation).
             nabu-msm-modules-debug = nixpkgs.legacyPackages.${system}.callPackage

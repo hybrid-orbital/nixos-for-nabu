@@ -335,10 +335,12 @@ GEN2 entries. The shipped source, not that cover-letter claim, is the basis
 of this patch.
 
 The patch is
-[`experimental/0001-drm-msm-a6xx-restore-a640-gbif.patch`](../pkgs/kernel/mainline-latest/experimental/0001-drm-msm-a6xx-restore-a640-gbif.patch).
-It is deliberately outside `patches/`, whose wildcard is automatically
-applied by the baseline module builder. Thus the baseline and candidate remain
-available for a controlled comparison.
+[`patches/0009-drm-msm-a6xx-restore-a640-gbif.patch`](../pkgs/kernel/mainline-latest/patches/0009-drm-msm-a6xx-restore-a640-gbif.patch),
+i.e. part of the kernel package's series, so a build of
+`nabu-kernel-mainline-latest` contains it and the kernel build from before that
+patch is the control it has to be compared against.  It is applied by
+`pkgs/kernel/mainline-latest/default.nix`, and the fast path in
+`msm-module.nix` picks it up with the rest of `patches/`.
 
 ### 12.2 Corrections to the original inference
 
@@ -377,55 +379,44 @@ Two other source-level qualifications:
   mean the CP has parsed commands. Additional cache ordering would require
   evidence of the specific outstanding transaction.
 
-### 12.3 Build and boot the isolated candidate
+### 12.3 How the candidate is built and booted
 
-Build on ARM64 Linux, or from another host with an ARM64 remote builder:
+The patch is part of the kernel package's series, so the build that has to run
+is the kernel build - `.github/workflows/build-kernel.yml` or the linux-builder
+produces `nabu-kernel-mainline-latest` and the Cachix cache carries it to the
+device:
 
 ```sh
-nix build path:.#packages.aarch64-linux.nabu-msm-module-gbif-fix \
-  --out-link result-msm-gbif
-nix build path:.#packages.aarch64-linux.nabu-msm-modules-gbif-fix \
-  --out-link result-modules-gbif
+nix build .#packages.aarch64-linux.nabu-kernel-mainline-latest --out-link result-kernel
 ```
 
-`path:.` also includes new files before they have been added to Git. After
-tracking them, the usual `.#packages.aarch64-linux.…` form works as well.
-The first output contains `msm.ko`; the second is the original kernel modules
-output with that module replaced. Both reuse the **baseline** kernel's
-`kernel.dev`, so this experiment does not require a full kernel compilation.
-
-For a test generation, add to `nixos/configuration.nix`:
+A one-off variant can also be added without touching the package:
 
 ```nix
 nabu.kernel.name = "mainline-latest";
-imports = [ ./debug/a640-gbif-fix.nix ./debug/ccu-capture.nix ];
+boot.kernelPatches = [ {
+  name = "a640-gbif-initialization";
+  patch = ../pkgs/kernel/mainline-latest/patches/0009-drm-msm-a6xx-restore-a640-gbif.patch;
+} ];
 ```
 
-Merge those imports with any existing list. Remove any other replacement of
-`kernel.modules` for this run. Then, on the device:
+That relative path assumes the snippet is in `nixos/configuration.nix`.
 
-```sh
-sudo nixos-rebuild boot --flake path:.#nabu
-sudo reboot
+On the device, boot the new kernel and keep the previous generation in the
+systemd-boot menu - that build (without `0009`) is the control.  The capture
+service is orthogonal:
+
+```nix
+nabu.kernel.name = "mainline-latest";
+imports = [ ./debug/ccu-capture.nix ];
 ```
-
-Use the appropriate configuration name for an impermanent installation.
-The optional module rejects `sm8150-fork` and builds against
-`config.boot.kernelPackages.kernel`. It overrides `system.modulesTree`,
-preserving `boot.extraModulePackages`, so normal module aggregation / depmod
-and the initrd's `makeModulesClosure` both consume the replacement.
-The locked nixpkgs excludes the initrd from `system.replaceDependencies` by
-default; that mechanism alone would leave its old `msm` in use. Do not attempt
-to unload the active display's `msm`
-module or just copy a `.ko` into an old initrd.
 
 #### The swap is not the kernel's own build (measured)
 
 `nabu-msm-module` compiles `drivers/gpu/drm/msm` through `make M=... modules`
 against `${kernel.dev}`. That is a *different compilation* from the one the
-shipped `msm.ko` went through. Comparing the two artefacts of the same locked
-kernel (same tarball, same eight patches, same `.config`, same GCC 15.3.0) with
-`pkgs/kernel/mainline-latest/module-verify.py`:
+shipped `msm.ko` went through.  Comparing the two artefacts of the same locked
+kernel (same tarball, same patches, same `.config`, same GCC 15.3.0):
 
 | | shipped `msm.ko` | rebuilt by `msm-module.nix` |
 | --- | --- | --- |
@@ -443,30 +434,16 @@ whether the GBIF candidate fixes, breaks or does nothing to the CCU faults - a
 black panel with an otherwise healthy system is exactly as likely to come from
 the rebuild as from the patch.
 
-Run the shortcut as a pair of boots instead, which is what
-`nabu.debug.msmSwap.variant` in `nixos/debug/a640-gbif-fix.nix` selects:
-
-* `"baseline"` - the unmodified rebuild (`nabu-msm-modules-baseline`: the same
-  path with no extra patch), booted once;
-* `"gbif-fix"` - the rebuild with the candidate, booted once (the default).
-
-If the baseline boot is black as well, the module shortcut - not the patch - is
-what has to be looked at first. A conclusion about hardware needs the
-full-kernel form below, which *is* the kernel's own build.
-
-The alternative **full-kernel** experiment uses the same patch with normal
-NixOS kernel packaging, instead of importing `a640-gbif-fix.nix`:
-
-```nix
-nabu.kernel.name = "mainline-latest";
-boot.kernelPatches = [ {
-  name = "a640-gbif-initialization";
-  patch = ../pkgs/kernel/mainline-latest/experimental/0001-drm-msm-a6xx-restore-a640-gbif.patch;
-} ];
-```
-
-That relative path assumes the snippet is in `nixos/configuration.nix`.
-Do not combine the full-kernel and module-replacement methods.
+That was measured as well: booting the *unpatched* rebuild leaves the panel
+dark exactly like the candidate, so the rebuild - not the GBIF patch - is what
+breaks the display path, and the patch itself is still unverified.  The
+shortcut is therefore left to build-time iteration and to observing the driver:
+`nixos/debug/a640-gbif-fix.nix` installs the module built with
+`debug/vm-log-dmesg.sh` (the `msm.vm_log_dmesg` parameter), which is read over
+ssh while the screen stays dark; add
+`boot.kernelParams = [ "msm.vm_log_shift=8" ]` for the driver's own ring as well,
+and note that kprobes need no swapped module at all.  Do not attempt to unload
+the active display's `msm`, and do not copy a `.ko` into an existing initrd.
 
 ### 12.4 Validation and acceptance criteria
 
@@ -476,21 +453,17 @@ Completed locally / on the configured ARM64 Linux builder:
   source with `patch -p1 -F0 --forward`: all applied, no fuzz.
 * `checkpatch.pl --no-tree --strict --no-signoff`: zero errors or warnings.
   This local candidate has no invented author sign-off or hardware Tested-by.
-* Built `nabu-msm-module-gbif-fix` with the existing Nix module derivation:
-  compilation, MODPOST and link succeeded. Vermagic:
-  `7.2.6 SMP preempt mod_unload aarch64`.
-* Built `nabu-msm-modules-gbif-fix`, including compression and replacement of
-  `lib/modules/7.2.6/kernel/drivers/gpu/drm/msm/msm.ko.xz`.
+* Built the candidate through the module path (`nabu-msm-module` plus the
+  patch): compilation, MODPOST and link succeeded, vermagic
+  `7.2.6 SMP preempt mod_unload aarch64`.  That is no longer the route the
+  device is tested with (12.3), but it established that the patch compiles and
+  links, before the module shortcut was found to be unsound.
+* Booted both the *unpatched* rebuild and the candidate on the device: both
+  leave the panel dark, so the shortcut itself is what has to be avoided.
 
-The module artifact is
-`/nix/store/z21lxv7waxn8rl0qdd5znmny6jqmxaq4-nabu-drm-module-7.2.6/msm.ko`,
-SHA-256 `d79f1905fb8e1397873d35d4186f604bd33f9e1d0b06a979e3eb27f4b7a94719`.
-The baseline kernel config has both `CONFIG_MODVERSIONS` and
-`CONFIG_MODULE_SIG` disabled. Matching vermagic alone would not establish
-compatibility with arbitrary other kernels; use the matching build tree.
-
-**Not performed:** booting nabu, full-kernel build, initrd boot verification,
-GPU workload testing, or suspend/resume. Keep a known-good boot generation.
+**Not performed:** a kernel build containing `patches/0009-...`, boot
+verification of that kernel, GPU workload testing, or suspend/resume. Keep a
+known-good boot generation.
 Compare an unpatched 7.2.6 boot and a patched boot using the same userspace,
 firmware, environment and workload, preferably multiple cold boots. Exercise
 shell startup, Firefox, and suspend/resume for at least the original 36-minute

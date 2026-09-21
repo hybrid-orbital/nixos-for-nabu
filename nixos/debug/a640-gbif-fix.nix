@@ -1,24 +1,29 @@
-# Opt-in A/B test of the A640 GBIF initialization fix. Rebuild the initrd
-# with the replacement module; msm is already in use after early boot.
-# See docs/kernel-gpu-fault.md, section 12. Do not combine this with another
-# override of system.modulesTree or with the full-kernel form of the patch.
+# Opt-in swap of a rebuilt msm.ko into the boot path (initrd + stage 2).
 #
-# Run this as a pair of boots.  `msm-module.nix` compiles drivers/gpu/drm/msm
-# with `make M=... modules`, which is not the build the kernel's own msm.ko went
-# through (docs/kernel-gpu-fault.md, section 12.3), so a single boot cannot tell
-# the patch apart from the rebuild: boot once with variant = "baseline" (the
-# unmodified rebuild) and once with "gbif-fix".  If the baseline boot shows the
-# same problem, nothing about the patch has been learned yet.
+# The name is historical: the A640/A680 GBIF candidate now belongs to the kernel
+# package (`pkgs/kernel/mainline-latest/patches/0009-...`, wired up in its
+# default.nix), because a rebuild of drivers/gpu/drm/msm is not the module the
+# kernel ships and a boot with it leaves the panel dark (measured;
+# docs/kernel-gpu-fault.md, section 12.3).  A change that has to reach the
+# device therefore goes into the kernel package, not here.
+#
+# What is left for this file is *observing* the driver over ssh: it installs the
+# module built with `debug/vm-log-dmesg.sh`, i.e. the one carrying the
+# `msm.vm_log_dmesg` parameter, so a capture can be read from the kernel log
+# even though the screen stays dark.  Add
+# `boot.kernelParams = [ "msm.vm_log_shift=8" ]` for the driver's own vm-log ring
+# as well.
+#
+# `msm` is loaded from the initrd, so both the initrd's makeModulesClosure and
+# stage-2 module aggregation have to see the replacement.  Do not combine this
+# with another override of system.modulesTree.
 { config, pkgs, lib, ... }:
 let
   kernel = config.boot.kernelPackages.kernel;
-  variant = config.nabu.debug.msmSwap.variant;
 
   module = pkgs.callPackage ../../pkgs/kernel/mainline-latest/msm-module.nix {
     inherit kernel;
-    extraPatches = lib.optionals (variant == "gbif-fix") [
-      ../../pkgs/kernel/mainline-latest/experimental/0001-drm-msm-a6xx-restore-a640-gbif.patch
-    ];
+    extraShell = builtins.readFile ../../pkgs/kernel/mainline-latest/debug/vm-log-dmesg.sh;
   };
 
   replacement = pkgs.callPackage ../../pkgs/kernel/mainline-latest/msm-modules-debug.nix {
@@ -26,33 +31,15 @@ let
   };
 in
 {
-  options.nabu.debug.msmSwap.variant = lib.mkOption {
-    type = lib.types.enum [
-      "baseline"
-      "gbif-fix"
-    ];
-    default = "gbif-fix";
-    description = ''
-      Which module to put into the boot path: the unmodified rebuild (the
-      control) or the rebuild with the A640/A680 GBIF candidate patch.  Both
-      are built the same way, so booting both is what separates an effect of
-      the patch from an effect of rebuilding the module at all.
-    '';
-  };
+  assertions = [
+    {
+      assertion = config.nabu.kernel.name == "mainline-latest";
+      message = "a640-gbif-fix.nix requires nabu.kernel.name = mainline-latest";
+    }
+  ];
 
-  config = {
-    assertions = [
-      {
-        assertion = config.nabu.kernel.name == "mainline-latest";
-        message = "a640-gbif-fix.nix requires nabu.kernel.name = mainline-latest";
-      }
-    ];
-
-    # Feed the replacement into normal module aggregation / depmod and the
-    # initrd's makeModulesClosure. replaceDependencies skips the initrd by
-    # default and cannot replace the module bytes inside its compressed cpio.
-    system.modulesTree = lib.mkForce (
-      [ replacement ] ++ config.boot.extraModulePackages
-    );
-  };
+  # Feed the replacement into normal module aggregation / depmod and the
+  # initrd's makeModulesClosure. replaceDependencies skips the initrd by
+  # default and cannot replace the module bytes inside its compressed cpio.
+  system.modulesTree = lib.mkForce ([ replacement ] ++ config.boot.extraModulePackages);
 }

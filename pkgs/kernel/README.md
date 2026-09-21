@@ -299,14 +299,12 @@ a capture started by hand also sees a fault within seconds.
 
 ### Fast iteration: building only the DRM modules
 
-For the build-tested A640/A680 GBIF initialization candidate, use
-`nabu-msm-module-gbif-fix` / `nabu-msm-modules-gbif-fix` and the opt-in
-`nixos/debug/a640-gbif-fix.nix` module. See
-[the source audit and A/B procedure](../../docs/kernel-gpu-fault.md#12-source-audit-and-candidate-patch-missing-a640-cx-gbif-setup).
-It restores a missing register list; fixing the observed CCU faults still
-needs hardware validation. The opt-in module overrides `system.modulesTree`
-so the initrd also gets the candidate. `system.replaceDependencies` alone
-does not do this: the locked nixpkgs excludes the initrd by default.
+The A640/A680 GBIF initialization candidate is part of the kernel package
+(`mainline-latest/patches/0009-...`, applied by its `default.nix`), so it is
+tested by building and booting `nabu-kernel-mainline-latest` - see
+[the source audit and boot procedure](../../docs/kernel-gpu-fault.md#12-source-audit-and-candidate-patch-missing-a640-cx-gbif-setup).
+It restores a missing register list; fixing the observed CCU faults still needs
+hardware validation.
 
 A full `nix build .#nabu-kernel-mainline-latest` is tens of minutes; while
 chasing a driver bug only the driver under test has to be compiled:
@@ -324,13 +322,12 @@ brk #0x800` here.  `msm` is the display driver and is loaded from the initrd, so
 a swapped module is a different driver, not the shipped one plus a patch: one
 boot from it cannot attribute a black panel, a fault or a fix to the patch.
 
-Run it as a *pair* of boots instead.  `nabu-msm-modules-baseline` is the same
-build with no extra patch - boot it once and the candidate
-(`nabu-msm-modules-gbif-fix`, `nabu-msm-modules-debug`) once.  If the baseline is
-black as well, the difference comes from rebuilding the module, not from the
-patch.  `nixos/debug/a640-gbif-fix.nix` selects between the two with
-`nabu.debug.msmSwap.variant`.  A conclusion about hardware needs the
-full-kernel form (`boot.kernelPatches`), which *is* the kernel's build.
+That was measured on hardware too: booting the *unpatched* rebuild leaves the
+panel dark exactly like the candidate.  A patch that has to reach the device
+therefore belongs to the kernel package (`patches/` or `boot.kernelPatches`),
+and this shortcut is left to build-time iteration and to the observability
+below (`nixos/debug/a640-gbif-fix.nix` installs the vm-log instrumented module;
+kprobes need no swapped module at all).
 
 `pkgs/kernel/mainline-latest/msm-module.nix` unpacks the kernel source, applies
 the same patch series the kernel package applies, and then runs

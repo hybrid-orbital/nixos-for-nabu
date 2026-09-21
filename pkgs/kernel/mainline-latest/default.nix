@@ -13,6 +13,11 @@
 #   0006  of/property remote-endpoint fix + MAINTAINERS entry
 #   0007  runtime fixes (ath10k MAC address + thermal, Adreno suspend,
 #         qcom-geni serial force suspend during system sleep)
+#   0008  re-apply the bonded dual-DSI PLL fix that 7.2.6 reverted (the Pad 5
+#         panel is a bonded panel)
+#   0009  A640/A680 CX GBIF initialization: 7.2.6 moved those writes into the
+#         catalog's `gbif_cx` list and left the two GEN2 entries without one,
+#         so they stopped happening
 #
 # The patches are a rebase of the sm8150-mainline tree (branch sm8150/6.17,
 # tag v6.17.0-sm8150) onto the version nixpkgs ships.  Keep them ordered: each
@@ -83,6 +88,16 @@ let
         # the panel, thin intact strip on the left).  Re-apply it.
         name = "nabu-dsi-bonded-pll";
         patch = ./patches/0008-drm-msm-dsi-restore-bonded-mode-pll-fix.patch;
+      }
+      {
+        # 7.2.6 programs GBIF_QSB_SIDE0..3 only for the A610 family: the setup
+        # moved from hw_init() into the catalog's `gbif_cx` field, and the A640
+        # (0x06040001, this device) and A680 entries were left without a list,
+        # so the loop skips them.  Attach the existing `a640_gbif` list again.
+        # Whether that is what makes the GPU read unmapped VAs is still open;
+        # see docs/kernel-gpu-fault.md, section 12.
+        name = "nabu-a640-gbif";
+        patch = ./patches/0009-drm-msm-a6xx-restore-a640-gbif.patch;
       }
     ];
 
