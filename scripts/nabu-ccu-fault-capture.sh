@@ -69,6 +69,24 @@ die() {
 	exit 1
 }
 
+require_cmds() {
+	local -a missing=()
+	local c
+	for c in "$@"; do
+		if ! command -v "$c" >/dev/null 2>&1; then
+			missing+=("$c")
+		fi
+	done
+	if ((${#missing[@]})); then
+		printf 'error: missing commands: %s\n' "${missing[*]}" >&2
+		printf 'hint: run this from a normal login shell, or use the systemd\n' >&2
+		printf '      service in nixos/debug/ccu-capture.nix, which sets PATH.\n' >&2
+		exit 1
+	fi
+}
+
+COMMON_CMDS=(awk cat cut date grep head mkdir mktemp sed seq sleep sort tail tr uname uniq wc)
+
 # ---------------------------------------------------------------- helpers ---
 
 # Strip leading zeros so that dmesg's "0000000101600000" and the trace's
@@ -284,11 +302,14 @@ analysis() {
 
 if [[ -n "$ANALYZE_ONLY" ]]; then
 	[[ -d "$ANALYZE_ONLY" ]] || die "--analyze-only needs a directory"
+	require_cmds "${COMMON_CMDS[@]}"
 	analysis "$(cd "$ANALYZE_ONLY" && pwd)"
 	exit 0
 fi
 
 # ----------------------------------------------------------------- tracing ---
+
+require_cmds "${COMMON_CMDS[@]}" dmesg
 
 if [[ $EUID -ne 0 ]]; then
 	die "run as root (tracefs and dmesg need it)"
@@ -308,7 +329,11 @@ uname -r >"$OUT/kernel-release.txt"
 	echo
 	cat /proc/swaps
 	echo
-	free -m
+	if command -v free >/dev/null 2>&1; then
+		free -m
+	else
+		grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree)' /proc/meminfo
+	fi
 } >"$OUT/system.txt"
 if [[ -r /sys/module/msm/parameters/vm_log_shift ]]; then
 	cat /sys/module/msm/parameters/vm_log_shift >"$OUT/vm-log-shift.txt"
@@ -439,6 +464,7 @@ log "analysis"
 analysis "$OUT"
 
 if [[ $PACKAGE -eq 1 ]]; then
+	require_cmds tar
 	tar czf "$OUT.tar.gz" -C "$(dirname "$OUT")" "$(basename "$OUT")"
 	log "bundle: $OUT.tar.gz"
 fi

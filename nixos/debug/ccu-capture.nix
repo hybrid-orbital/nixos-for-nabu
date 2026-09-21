@@ -33,6 +33,21 @@
       "systemd-udev-settle.service"
     ];
     before = [ "graphical.target" ];
+    # A service gets a clean PATH, so the tools the script uses have to be
+    # listed explicitly (coreutils for cat/cut/date/head/sort/…, procps for
+    # free, util-linux for dmesg, plus gawk/gnugrep/gnused/gnutar).  This is a
+    # unit-level option, *not* part of serviceConfig.
+    path = with pkgs; [
+      bash
+      coreutils
+      findutils
+      gawk
+      gnugrep
+      gnused
+      gnutar
+      procps
+      util-linux
+    ];
     serviceConfig = {
       Type = "simple";
       Restart = "no";
