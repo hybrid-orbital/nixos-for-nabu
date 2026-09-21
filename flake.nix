@@ -118,21 +118,40 @@
             value = kernelFor kernelName;
           }) kernelNames
         )
-        // lib.optionalAttrs (system == "aarch64-linux") {
-          # Compiles only the GPU/DRM part of the mainline-latest kernel against
-          # the already built kbuild tree, so iterating on a GPU patch does not
-          # cost a full kernel build:
-          #   nix build .#nabu-msm-module && ls result
-          #   nix build --impure --expr '(builtins.getFlake (toString ./.))
-          #     .packages.aarch64-linux.nabu-msm-module.override {
-          #       dirs = [ "drivers/gpu/drm/msm" "drivers/gpu/drm/panel" ];
-          #     }'
-          nabu-msm-module = nixpkgs.legacyPackages.${system}.callPackage
-            ./pkgs/kernel/mainline-latest/msm-module.nix
-            {
-              kernel = kernelFor "mainline-latest";
+        // lib.optionalAttrs (system == "aarch64-linux") (
+          let
+            # Compiles only the GPU/DRM part of the mainline-latest kernel
+            # against the already built kbuild tree, so iterating on a GPU patch
+            # does not cost a full kernel build:
+            #   nix build .#nabu-msm-module && ls result
+            #   nix build --impure --expr '(builtins.getFlake (toString ./.))
+            #     .packages.aarch64-linux.nabu-msm-module.override {
+            #       dirs = [ "drivers/gpu/drm/msm" "drivers/gpu/drm/panel" ];
+            #     }'
+            msmModule = nixpkgs.legacyPackages.${system}.callPackage
+              ./pkgs/kernel/mainline-latest/msm-module.nix
+              {
+                kernel = kernelFor "mainline-latest";
+              };
+            # Same module with `debug/vm-log-dmesg.sh` applied, i.e. with the
+            # msm.vm_log_dmesg parameter that prints every VM map/unmap op.
+            msmModuleDebug = msmModule.override {
+              extraShell = builtins.readFile ./pkgs/kernel/mainline-latest/debug/vm-log-dmesg.sh;
             };
-        }
+          in
+          {
+            nabu-msm-module = msmModule;
+            nabu-msm-module-debug = msmModuleDebug;
+            # The kernel's `modules` output with that module swapped in, for
+            # `system.replaceDependencies.replacements` on the device.
+            nabu-msm-modules-debug = nixpkgs.legacyPackages.${system}.callPackage
+              ./pkgs/kernel/mainline-latest/msm-modules-debug.nix
+              {
+                kernel = kernelFor "mainline-latest";
+                module = msmModuleDebug;
+              };
+          }
+        )
       );
     };
 }
