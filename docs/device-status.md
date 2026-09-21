@@ -28,6 +28,7 @@ in the configuration does not mean that the hardware behind it has been validate
 | Boot reliability | Boots occasionally fail; cause undetermined | Record cold boots/warm reboots, the failing stage, logs, and hardware/firmware versions separately |
 | Power key | Deliberately ignored for now | Redesign key behaviour together with display and suspend validation |
 | rootfs size | The current desktop image is large | Measure the closure, split variants, drop unnecessary dependencies |
+| `mainline-latest` GPU faults | On 7.2.6 the GPU reads VAs with no valid PTE (`source=CCU`, `type=TRANSLATION`), which makes the driver reset the GPU and the screen glitch/redraw; the 6.17 `sm8150-fork` kernel does not reproduce it | [Investigation report](kernel-gpu-fault.md): what was measured, what has been ruled out, which code paths can remove a VA mapping, and the in-kernel dump that should settle it |
 
 `services.logind.settings.Login.HandlePowerKey = "ignore"` together with niri's
 `disable-power-key-handling` currently avoids existing suspend/screen-off problems.

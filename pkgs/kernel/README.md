@@ -283,6 +283,11 @@ under GL load it reliably produces these fault storms and a GPU recovery
 default and the kernel for daily use**; `mainline-latest` is a test target
 until this is understood upstream.
 
+The full report — measurements, the audit of every path that can remove a VA
+mapping, the exclusion table, the remaining hypotheses and the in-kernel dump
+that should settle them — is in
+[docs/kernel-gpu-fault.md](../../docs/kernel-gpu-fault.md).
+
 The capture tooling stays for whoever picks this up: a capture has to be
 running *before* the fault, and the first fault of a boot happens while the
 shell comes up, in a VM created earlier.

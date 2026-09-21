@@ -24,6 +24,7 @@
 | 启动可靠性 | 偶尔启动失败，原因未定 | 分别记录冷启动/热重启、失败阶段、日志和硬件/固件版本 |
 | 电源键 | 当前刻意忽略 | 配合显示与休眠验证重新设计按键行为 |
 | rootfs 体积 | 当前桌面镜像较大 | 测量闭包、拆分变体、减少非必要依赖 |
+| `mainline-latest` 的 GPU fault | 7.2.6 上 GPU 会读没有有效 PTE 的 VA（`source=CCU`、`type=TRANSLATION`），驱动因此重置 GPU，表现为花屏/黑屏后重绘；6.17 的 `sm8150-fork` 不复现 | [调查报告](../kernel-gpu-fault.md)：已测数据、已排除项、哪些代码路径会拆掉 VA 映射，以及应当补上的内核 dump |
 
 当前 `services.logind.settings.Login.HandlePowerKey = "ignore"` 与 niri 的
 `disable-power-key-handling` 共同避免现有挂起/熄屏问题。它们是临时行为约束，
