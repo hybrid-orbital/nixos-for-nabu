@@ -197,6 +197,93 @@ and 7.2.6.
 To check a future kernel: run the same Firefox workload and
 `sudo dmesg | grep -iE 'gpu fault|hangcheck recover'` — both should stay quiet.
 
+#### Still reproducing on 7.2.6 (2026-09-21)
+
+The storm above is **not** fixed on 7.2.6 plus the DSI fix: Firefox still
+produces, after roughly seven minutes of use,
+
+```
+*** gpu fault: ttbr0=000000014533e000 iova=0000000101600000 dir=READ type=TRANSLATION source=CCU (0,0,0,1)
+adreno 2c00000.gpu: [drm:a6xx_irq] *ERROR* gpu fault ring 0 fence d1a9 status 00800005 rb 04a0/0505 ib1 .../...
+msm_dpu ae01000.display-controller: [drm:recover_worker] *ERROR* 06040001: hangcheck recover!
+msm_dpu ae01000.display-controller: [drm:recover_worker] *ERROR* 06040001: offending task: firefox:gdrv0
+```
+
+(storm from ~443 s, first recovery at ~587 s, repeating every few minutes).
+Reading the driver: `type=TRANSLATION` is the SMMU FSR.TF, i.e. *no valid PTE*
+for that IOVA at that instant, and `source` is `a6xx_fault_block(fsynr1 & 0xff)`
+with id 4 = `CCU` (`adreno/a6xx_gpu.c`).  The line comes from
+`adreno_fault_handler()` (`adreno/adreno_gpu.c`), which deliberately turns
+stall-on-fault off for 500 ms after the first fault — the long storms with
+`callbacks suppressed` are the designed behaviour, not a printk problem.  The
+recovery is `a6xx_fault_detect_irq()` (RBBM fault detect, `status 00800005`)
+queueing `recover_work`, which resets the GPU; that is the "driver reload" seen
+on the device.
+
+Nothing newer upstream addresses it: the msm commits in mainline *after* 7.2.6
+do not touch this path (`01c8d1f385f7` RCU-frees the ring/VM objects, but only
+to keep a *fence name* alive for `SYNC_IOC_FILE_INFO`; `140b13475302` is
+ARM32-only; `drivers/gpu/drm/drm_gpuvm.c` only lost two unused helpers).  So the
+fault has to be localised on the device.  A mapping can only disappear through
+three paths here, and all of them funnel through `msm_gem_vma_unmap()` with a
+reason string:
+
+* an explicit userspace `MSM_VM_BIND_OP_UNMAP` (`vm_unmap_op()`);
+* the GEM shrinker evicting or purging the BO (`put_iova_spaces(..., false,
+  "evict"/"purge")` in `msm_gem.c`);
+* BO/VM teardown (`close = true`, reasons `free`/`close`).
+
+Submits keep their BOs pinned for the lifetime of the submit
+(`submit_pin_objects()` / `vm_bind_job_pin_objects()` → `pin_count` → pinned LRU,
+released by `msm_gem_unpin_active()` from the fence callback); that pin is the
+only protection against the shrinker case.  The fork kernel (6.17) has no
+VM_BIND at all and keeps a VA for the BO's lifetime, which is why the same Mesa
+does not fault there.
+
+### Fast iteration: building only the DRM modules
+
+A full `nix build .#nabu-kernel-mainline-latest` is tens of minutes; while
+chasing a driver bug only the driver under test has to be compiled:
+
+```sh
+nix build .#nabu-msm-module          # ~30 s; result/ then holds msm.ko
+```
+
+`pkgs/kernel/mainline-latest/msm-module.nix` unpacks the kernel source, applies
+the same patch series the kernel package applies, and then runs
+`make -C ${kernel.dev}/lib/modules/<version>/build M=… modules` against the
+already built kernel's kbuild tree (its `.config`, `Module.symvers` and
+generated headers).  The kernel is built without `CONFIG_MODVERSIONS` and
+`CONFIG_MODULE_SIG`, so the result carries the same vermagic
+(`7.2.6 SMP preempt mod_unload aarch64`) as the shipped module and can be loaded
+on the device instead of rebuilding the kernel.  Three knobs extend it:
+
+* `dirs = [ … ]` — which directories to compile (default
+  `[ "drivers/gpu/drm/msm" ]`; add `"drivers/gpu/drm/panel"` for panel work);
+* `extraPatches = [ … ]` — extra patch files applied on top;
+* `extraShell = "…"` — a shell snippet run inside the source tree after the
+  patches, for debug-only instrumentation.
+
+`debug/vm-log-dmesg.sh` is exactly such a snippet: it adds a
+`msm.vm_log_dmesg` module parameter that prints every VM map/unmap with its
+reason and submitqueue id, so the faulting IOVA can be correlated with the unmap
+that removed it (a kprobe on `vm_log()` does the same without any rebuild —
+`CONFIG_KPROBES`, `CONFIG_KPROBE_EVENTS` and `CONFIG_DYNAMIC_FTRACE` are all
+enabled in this kernel).  Build it with:
+
+```sh
+nix build --impure --expr '
+  let f = builtins.getFlake (toString ./.);
+  in (f.packages.aarch64-linux.nabu-msm-module.override {
+       extraShell = builtins.readFile ./pkgs/kernel/mainline-latest/debug/vm-log-dmesg.sh;
+     })'
+```
+
+Two further discriminators need no rebuild at all: `msm.enable_eviction=0`
+(module parameter, writable at runtime) removes the shrinker eviction path, and
+`FD_MESA_DEBUG=noubwc` / `TU_DEBUG=noubwc` removes UBWC compression, i.e. the
+traffic the CCU is normally busy with.
+
 #### 7.2.6 needs the bonded-mode DSI fix re-applied
 
 With 7.2.6 the device boots and the GPU faults are gone, but most of the screen
