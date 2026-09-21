@@ -28,10 +28,10 @@
   systemd.services.nabu-ccu-capture = {
     description = "capture the first GPU fault of this boot";
     wantedBy = [ "multi-user.target" ];
-    after = [
-      "systemd-modules-load.service"
-      "systemd-udev-settle.service"
-    ];
+    # Only wait for module loading; `systemd-udev-settle.service` alone delayed
+    # the start to ~40 s on this device, which is *after* the shell's GPU VM
+    # already exists.  The script retries arming its probes while msm comes up.
+    after = [ "systemd-modules-load.service" ];
     before = [ "graphical.target" ];
     # A service gets a clean PATH, so the tools the script uses have to be
     # listed explicitly (coreutils for cat/cut/date/head/sort/…, procps for
@@ -56,7 +56,7 @@
       # --no-package keeps everything as plain files under the state directory.
       ExecStart = "${pkgs.bash}/bin/bash ${
         ../../scripts/nabu-ccu-fault-capture.sh
-      } --out /var/lib/nabu-ccu --timeout 1200 --grace 120 --no-package";
+      } --out /var/lib/nabu-ccu --timeout 3600 --grace 120 --no-package";
     };
   };
 }
