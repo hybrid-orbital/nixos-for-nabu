@@ -118,6 +118,21 @@
             value = kernelFor kernelName;
           }) kernelNames
         )
+        // lib.optionalAttrs (system == "aarch64-linux") {
+          # Compiles only the GPU/DRM part of the mainline-latest kernel against
+          # the already built kbuild tree, so iterating on a GPU patch does not
+          # cost a full kernel build:
+          #   nix build .#nabu-msm-module && ls result
+          #   nix build --impure --expr '(builtins.getFlake (toString ./.))
+          #     .packages.aarch64-linux.nabu-msm-module.override {
+          #       dirs = [ "drivers/gpu/drm/msm" "drivers/gpu/drm/panel" ];
+          #     }'
+          nabu-msm-module = nixpkgs.legacyPackages.${system}.callPackage
+            ./pkgs/kernel/mainline-latest/msm-module.nix
+            {
+              kernel = kernelFor "mainline-latest";
+            };
+        }
       );
     };
 }
