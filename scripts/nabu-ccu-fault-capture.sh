@@ -114,6 +114,57 @@ count_in() { # count_in <pattern> <file>
 	printf '%s' "${n:-0}"
 }
 
+# The kprobe output mixes formats: registers (%x0) print as 0x-prefixed hex,
+# fetched memory (+0($argN):u64) as decimal, and a newer version of this script
+# asks for :x64.  dmesg zero-pads its values (iova=000000010aa30000) while the
+# trace does not (iova=0x10aa30000), so accept both.
+iova_re() { printf 'iova=(0x)?0*%s([^0-9a-f]|$)' "$1"; }
+ttbr_re() {
+	local hex="$1"
+	printf 'ttbr=((0x)?%s|%s)([^0-9a-f]|$)' "$hex" "$((16#$hex))"
+}
+mmu_of() { # mmu_of <trace> -> uniq mmu values
+	grep -oE 'mmu=(0x)?[0-9a-f]+' "$1" 2>/dev/null | sed 's/mmu=0x\?//' | sort -u
+}
+
+# Merge "fault" lines (from dmesg) and map/unmap events (from the trace) for one
+# IOVA into a single time-ordered stream, then count how many faults happened
+# while that VA had no mapping.
+timeline_for_iova() {
+	local iv="$1" dmesg="$2" trace="$3"
+	{
+		grep -E "gpu fault:.*$(iova_re "$iv")" "$dmesg" 2>/dev/null |
+			sed -n 's/^\[ *\([0-9][0-9.]*\)\].*/t=\1\tfault/p'
+		grep -E "$(iova_re "$iv")" "$trace" 2>/dev/null |
+			awk '{
+				ts=""; kind="";
+				for (i = 1; i <= NF; i++)
+					if ($i ~ /^[0-9]+\.[0-9]+:$/ && $(i+1) ~ /^(vmop|ptmap|ptunmap):$/) {
+						ts = $i; sub(":$", "", ts); kind = $(i+1); sub(":$", "", kind)
+					}
+				op = ""; mmu = "";
+				for (i = 1; i <= NF; i++) {
+					if ($i ~ /^op=/) op = $i
+					if ($i ~ /^mmu=/) mmu = $i
+				}
+				if (ts != "")
+					printf "t=%s\t%s %s %s\n", ts, kind, op, mmu
+			}'
+	} | sort -t= -k2 -n
+}
+
+close_window_summary() { # reads a merged timeline on stdin
+	awk -F'\t' '
+		$2 == "fault" { total++; if (state == "closed") closed++; else if (state == "open") open++; else unknown++; next }
+		{
+			split($2, f, " ");
+			if (f[2] ~ /op="map"/ || f[1] == "ptmap:") state = "open";
+			else if (f[2] ~ /op="(close|unmap|purge|evict|free|vma_put)"/ || f[1] == "ptunmap:") state = "closed";
+		}
+		END { printf "faults=%d (while-unmapped=%d, while-mapped=%d, before-any-event=%d)", total, closed, open, unknown }
+	'
+}
+
 # Everything the kernel logged after our marker (i.e. new messages).
 new_since_marker() {
 	local marker="$1" file="$2"
@@ -234,30 +285,38 @@ analysis() {
 
 		for iv in "${iovas[@]}"; do
 			[[ -n "$iv" ]] || continue
-			hits=$(count_in "(vm|pt)(op|map|unmap):.*iova=$iv " "$trace")
-			mapped=$(count_in ": ptmap:.*iova=$iv " "$trace")
-			unmapped=$(count_in ": ptunmap:.*iova=$iv " "$trace")
-			reasons=$(grep -E "(vm|pt)(op|unmap):.*iova=$iv " "$trace" 2>/dev/null |
+			local ire
+			ire=$(iova_re "$iv")
+			hits=$(count_in "(vm|pt)(op|map|unmap):.*$ire" "$trace")
+			mapped=$(count_in ": ptmap:.*$ire" "$trace")
+			unmapped=$(count_in ": ptunmap:.*$ire" "$trace")
+			reasons=$(grep -E "(vm|pt)(op|unmap):.*$ire" "$trace" 2>/dev/null |
 				grep -oE 'op="[a-z_]*"' | sort -u | tr '\n' ' ' || true)
 			printf '  iova=%-12s events=%-4s ptmap=%-4s ptunmap=%-4s %s\n' \
 				"$iv" "$hits" "$mapped" "$unmapped" "$reasons"
+			printf '    faults: %s\n' "$(timeline_for_iova "$iv" "$dmesg" "$trace" | close_window_summary)"
+			printf '    timeline (last 12):\n'
+			timeline_for_iova "$iv" "$dmesg" "$trace" | tail -12 | sed 's/^/      /'
 		done
 
 		echo
 		echo "--- the page table of the captured fault ---"
 		local mmu d v
 		mmu=$(grep -E ": ptparams:" "$trace" 2>/dev/null |
-			grep -E "[^0-9a-f]ttbr=$n_ttbr\b" | tail -1 |
-			sed -n 's/.*[^0-9a-f]mmu=\([0-9a-f]*\).*/\1/p' || true)
+			grep -E "$(ttbr_re "$n_ttbr")" | tail -1 |
+			sed -n 's/.*mmu=0x\?\([0-9a-f]*\).*/\1/p' || true)
 		if [[ -n "$mmu" ]]; then
-			d=$(count_in ": ptdestroy:.*mmu=$mmu" "$before")
+			d=$(count_in ": ptdestroy:.*mmu=(0x)?$mmu\b" "$before")
 			echo "  mmu for ttbr0=$n_ttbr: $mmu"
 			printf '  ptmap/ptunmap for it before the fault: %s / %s\n' \
-				"$(count_in ": ptmap:.*mmu=$mmu" "$before")" \
-				"$(count_in ": ptunmap:.*mmu=$mmu" "$before")"
+				"$(count_in ": ptmap:.*mmu=(0x)?$mmu\b" "$before")" \
+				"$(count_in ": ptunmap:.*mmu=(0x)?$mmu\b" "$before")"
+			printf '  distinct VAs that mmu touched before the fault: %s\n' \
+				"$(grep -E ": pt(map|unmap):.*mmu=(0x)?$mmu\b" "$before" 2>/dev/null |
+					grep -oE 'iova=(0x)?[0-9a-f]+' | sort -u | wc -l)"
 			echo "  ptdestroy for it before the fault: $d"
 			if [[ "$d" != "0" ]]; then
-				grep -E ": ptdestroy:.*mmu=$mmu" "$before" | tail -3 | sed 's/^/    /' || true
+				grep -E ": ptdestroy:.*mmu=(0x)?$mmu\b" "$before" | tail -3 | sed 's/^/    /' || true
 			fi
 		else
 			echo "  no ptparams entry for ttbr0=$n_ttbr"
@@ -366,21 +425,31 @@ echo 32768 >"$TRACE/buffer_size_kb" 2>/dev/null || true
 # the mmu / gpuvm op tables, so they are always probeable.  msm may still be
 # loading (boot service), so retry for a while.
 arm() {
-	local probe="$1" i
+	local probe="$1" name i err
+	name=$(printf '%s' "$probe" | sed -n 's/^[pr]:\([^ ]*\).*/\1/p')
+	err="$OUT/.probe-err.$$"
 	for i in $(seq 1 20); do
-		if echo "$probe" >>"$TRACE/kprobe_events" 2>/dev/null; then
+		if echo "$probe" >>"$TRACE/kprobe_events" 2>"$err"; then
+			rm -f "$err"
+			return 0
+		fi
+		# Already armed (e.g. by a previous run of this script): reuse it.
+		if [[ -e "$TRACE/events/kprobes/$name/enable" ]]; then
+			rm -f "$err"
 			return 0
 		fi
 		sleep 1
 	done
-	if ! echo "$probe" >>"$TRACE/kprobe_events" 2>>"$OUT/probe-errors.txt"; then
-		warn "could not arm probe: $probe"
-	fi
+	{
+		echo "probe $name: $(cat "$err" 2>/dev/null)"
+	} >>"$OUT/probe-errors.txt"
+	rm -f "$err"
+	warn "could not arm probe: $probe"
 }
 
 arm 'p:vmop vm_log vm=%x0 op=+0(%x1):string iova=%x2 range=%x3 qid=%x4'
-arm 'r:ptparams msm_iommu_pagetable_params mmu=$arg1 ttbr=+0($arg2):u64 asid=+0($arg3):s32'
-arm 'p:ptmap msm_iommu_pagetable_map mmu=%x0 iova=%x1 len=%x2'
+arm 'r:ptparams msm_iommu_pagetable_params mmu=$arg1 ttbr=+0($arg2):x64 asid=+0($arg3):x32'
+arm 'p:ptmap msm_iommu_pagetable_map mmu=%x0 iova=%x1 sgt=%x2 len=%x4'
 arm 'p:ptunmap msm_iommu_pagetable_unmap mmu=%x0 iova=%x1 len=%x2'
 arm 'p:ptdestroy msm_iommu_pagetable_destroy mmu=%x0'
 arm 'p:vmfree msm_gem_vm_free gpuvm=%x0'
