@@ -240,6 +240,27 @@ only protection against the shrinker case.  The fork kernel (6.17) has no
 VM_BIND at all and keeps a VA for the BO's lifetime, which is why the same Mesa
 does not fault there.
 
+On the device, `scripts/nabu-ccu-fault-capture.sh` does the first pass for you:
+
+```sh
+sudo bash scripts/nabu-ccu-fault-capture.sh     # then just use Firefox
+```
+
+It arms kprobes on `vm_log()`, `msm_iommu_pagetable_{params,map,unmap,destroy}`,
+`msm_gem_vm_free()` and `msm_gem_vm_unusable()`, waits for the first
+`*** gpu fault: ttbr0=…` line, snapshots the trace buffer at that moment, keeps
+tracing until the recovery (or `--grace`), and then prints a summary that
+answers, for that specific fault: did the faulting IOVA see any per-VA event
+(and which reason), was its page table - identified by matching the fault's
+`ttbr0` against `msm_iommu_pagetable_params()` - destroyed before the fault, and
+did the driver print its own `vm-log:` dump (needs `msm.vm_log_shift=8`).
+
+The three readings are: per-VA event with reason → that unmap is the culprit;
+no per-VA event but a `ptdestroy` for that mmu → the page table was freed while
+the GPU was reading (`msm_gem_vm_free()`), i.e. a VM lifetime bug and something
+no per-VA trace could ever show; neither → the address was never mapped for
+that VM, which points at the address itself (UBWC/descriptor) or the wrong VM.
+
 ### Fast iteration: building only the DRM modules
 
 A full `nix build .#nabu-kernel-mainline-latest` is tens of minutes; while
