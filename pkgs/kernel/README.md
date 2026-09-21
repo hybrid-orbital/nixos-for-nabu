@@ -261,6 +261,17 @@ the GPU was reading (`msm_gem_vm_free()`), i.e. a VM lifetime bug and something
 no per-VA trace could ever show; neither → the address was never mapped for
 that VM, which points at the address itself (UBWC/descriptor) or the wrong VM.
 
+A capture has to be running *before* the fault, and on this device the first
+fault of a boot happens while the shell comes up (~90 s in), in a VM that was
+created before that.  `nixos/debug/ccu-capture.nix` runs the same script as a
+systemd service before `graphical.target`, which is the only way to also get
+`msm_iommu_pagetable_params()` for that VM; add
+`boot.kernelParams = [ "msm.vm_log_shift=8" ]` to have the driver's own vm-log
+ring as well (it only exists for VMs created after the parameter is active).
+The device's fault cadence makes the manual run useful too: with the shell
+running, one IOVA was re-read every 8 s, so a capture started by hand sees a
+fault within seconds.
+
 ### Fast iteration: building only the DRM modules
 
 A full `nix build .#nabu-kernel-mainline-latest` is tens of minutes; while
