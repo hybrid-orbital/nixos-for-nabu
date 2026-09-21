@@ -76,6 +76,14 @@ let
         name = "nabu-runtime-fixes";
         patch = ./patches/0007-nabu-runtime-fixes.patch;
       }
+      {
+        # 7.2.6 reverts the upstream fix for bonded (dual-DSI) PLL init because
+        # that fix broke non-bonded use; the Pad 5 *is* bonded, and without the
+        # fix its second DSI link is not clocked properly (stripes over most of
+        # the panel, thin intact strip on the left).  Re-apply it.
+        name = "nabu-dsi-bonded-pll";
+        patch = ./patches/0008-drm-msm-dsi-restore-bonded-mode-pll-fix.patch;
+      }
     ];
 
     extraConfig = extraConfig;

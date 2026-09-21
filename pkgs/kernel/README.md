@@ -197,9 +197,54 @@ and 7.2.6.
 To check a future kernel: run the same Firefox workload and
 `sudo dmesg | grep -iE 'gpu fault|hangcheck recover'` — both should stay quiet.
 
-Still not verified: a successful boot.  If the next on-device attempt fails
-again, the log is at `/sys/fs/pstore/console-ramoops-0` — boot the working
-`sm8150-fork` generation and read it there; that is what the pstore settings
+#### 7.2.6 needs the bonded-mode DSI fix re-applied
+
+With 7.2.6 the device boots and the GPU faults are gone, but most of the screen
+showed stripes with only a thin intact strip on the left.  The Pad 5 panel is a
+**dual-DSI (bonded)** panel: one PLL in the primary DSI PHY clocks both links.
+Upstream commit `93c97bc8d85d` ("drm/msm: dsi: fix PLL init in bonded mode",
+present in 7.2.3) made that work by keeping `pll_enable_cnt` in the bias
+enable/disable path only; 7.2.6 **reverts** it because the same change broke
+non-bonded use ("Clock divider is being programmed incorrectly, resulting in the
+wrong display mode being selected").  Without it the secondary PHY sets the PLL
+without initialising the clocks, so the second link outputs a broken stream —
+exactly the observed stripes.
+
+`patches/0008-drm-msm-dsi-restore-bonded-mode-pll-fix.patch` re-applies the
+upstream fix on top of the revert (it applies to 7.2.6 unchanged), so the
+device keeps the bonded-mode behaviour of 7.2.3 while keeping the 7.2.6 GPU
+fixes.  A later kernel that lands a proper bonding fix can drop this patch.
+
+Why this and not one of the other 7.2.3 → 7.2.6 display changes (checked against
+the extracted upstream trees rather than inferred):
+
+* `diff -r` of `drivers/gpu/drm/msm` between v7.2.3 and v7.2.6 leaves four
+  display-relevant changes: this revert, the byte clock rounding below, the two
+  `dev_pm_opp_set_rate(0)` removals (performance votes, not pixel data) and the
+  DPU v13 / DisplayPort changes in `dpu_hw_catalog.c` and `dpu_encoder.c`, none
+  of which an sm8150 DSI panel uses;
+* the byte clock rounding added to `dsi_calc_clk_rate_6g()` is a no-op for this
+  panel: the mode asks for 585.137 MHz pclk, 292.57 MHz per link (halved for
+  bonded DSI), i.e. a C-PHY byte clock of 146.28 MHz (`pclk * bpp /
+  (16 * lanes)` with 24 bpp over 3 trios) and a VCO of 1.17–2.34 GHz depending
+  on the post-divider.  That is inside the 1.0–3.5 GHz window of
+  `dsi_phy_7nm_8150_cfgs` and the fractional divider can hit it exactly, so
+  `clk_round_rate()` returns the request unchanged - the rounding only matters
+  for modes whose VCO falls outside that window;
+* the 6.17 fork kernel (known good on the device) has no `pll_enable_cnt` at
+  all: its `dsi_pll_enable_pll_bias()` always writes the PLL bias and mux
+  registers, which is the behaviour the 7.2.3 code has and this patch restores;
+* applying patch 0008 to a 7.2.6 tree makes `dsi_phy.h` and `dsi_phy_7nm.c`
+  byte-identical to the v7.2.3 files (`patch -p1`, then `diff` against the
+  extracted trees), and mainline HEAD still ships the reverted 7.2.6 version —
+  there is no newer upstream bonded-mode fix to prefer over this one.
+
+Not verified yet: a boot with this patch applied.  If the stripes stay, the next
+thing to look at is the DSI clock tree on the device — `scripts/nabu-diagnostics.sh`
+captures `clk_summary`, so the byte and pixel clock rates of `mdss_dsi0` and
+`mdss_dsi1` can be compared with a boot of the fork kernel.  A boot that still
+fails leaves its log in `/sys/fs/pstore/console-ramoops-0`; boot the working
+`sm8150-fork` generation and read it there, which is what the pstore settings
 above are for.
 
 The rebase also needed three API updates that are folded into the patches: the
