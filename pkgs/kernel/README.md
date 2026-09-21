@@ -255,22 +255,42 @@ answers, for that specific fault: did the faulting IOVA see any per-VA event
 `ttbr0` against `msm_iommu_pagetable_params()` - destroyed before the fault, and
 did the driver print its own `vm-log:` dump (needs `msm.vm_log_shift=8`).
 
-The three readings are: per-VA event with reason → that unmap is the culprit;
-no per-VA event but a `ptdestroy` for that mmu → the page table was freed while
-the GPU was reading (`msm_gem_vm_free()`), i.e. a VM lifetime bug and something
-no per-VA trace could ever show; neither → the address was never mapped for
-that VM, which points at the address itself (UBWC/descriptor) or the wrong VM.
+##### Conclusion: an msm lifetime bug, not userspace, reclaim or UBWC
 
-A capture has to be running *before* the fault, and on this device the first
-fault of a boot happens while the shell comes up (~90 s in), in a VM that was
-created before that.  `nixos/debug/ccu-capture.nix` runs the same script as a
-systemd service before `graphical.target`, which is the only way to also get
-`msm_iommu_pagetable_params()` for that VM; add
-`boot.kernelParams = [ "msm.vm_log_shift=8" ]` to have the driver's own vm-log
-ring as well (it only exists for VMs created after the parameter is active).
-The device's fault cadence makes the manual run useful too: with the shell
-running, one IOVA was re-read every 8 s, so a capture started by hand sees a
-fault within seconds.
+What the evidence rules out, and what ruled it out:
+
+| Hypothesis | Verdict | Evidence |
+| --- | --- | --- |
+| Mesa/UMD removes VA mappings too early (VM_BIND) | ruled out | freedreno (the GL driver Firefox, niri and noctalia use here) never sets `MSM_PARAM_EN_VM_BIND` — only Turnip does.  Every VM op captured carries `qid=0` and comes from a userspace thread, i.e. the kernel-managed path, where `op="close"` is `msm_gem_close()` and `op="vma_put"` is `msm_gem_vma_put()`. |
+| The GEM shrinker reclaimed a BO (`purge`/`evict`) | ruled out | no `purge`/`evict` op ever appeared in any capture; the only teardown ops were `close` and `vma_put`. |
+| The whole page table was freed under the GPU | ruled out for the faults captured | the faulting VM's mmu had `ptdestroy=0` before its fault; the four `ptdestroy`s in the early-boot capture were other VMs at t=3.5–9.3 s. |
+| Wrong addresses from the 7.2 UBWC rework | ruled out | `FD_MESA_DEBUG=noubwc` (freedreno has that flag: "disable UBWC for all internal buffers") makes no difference. |
+| Changed fence semantics in 7.x (fence signalled earlier) | ruled out | `msm_fence_init()`, `msm_update_fence()` from `memptrs->fence` and `msm_job_run()` are identical to the 6.17 fork, which does not fault. |
+| The VA teardown plumbing itself changed | ruled out | `msm_gem_close()`, `put_iova_spaces()`, `msm_gem_vma_unmap()` and the page-table prealloc path are identical to the 6.17 fork. |
+
+What remains: the GPU (CCU) reads VAs whose PTE is gone, in a driver whose
+map/unmap plumbing is the same as the one that does *not* fault on 6.17, with
+the mappings removed only by the kernel's own BO teardown — and that teardown
+waits for the BO's `dma_resv` fences first (`msm_gem_close()`).  In other words
+*fence signalled ≠ hardware quiesced*, and none of our captures show the
+removal that the GPU outlived.  Getting further needs either a kernel version
+bisect (6.19 → 7.2, several full kernel builds) or upstream input; the
+device-side probing has reached the end of what it can tell us.
+
+Consequence for this repo: `mainline-latest` boots and drives the panel, but
+under GL load it reliably produces these fault storms and a GPU recovery
+(screen glitching, sometimes black, then a redraw).  **`sm8150-fork` stays the
+default and the kernel for daily use**; `mainline-latest` is a test target
+until this is understood upstream.
+
+The capture tooling stays for whoever picks this up: a capture has to be
+running *before* the fault, and the first fault of a boot happens while the
+shell comes up, in a VM created earlier.
+`nixos/debug/ccu-capture.nix` runs the script as a systemd service before
+`graphical.target` (which is what gets `msm_iommu_pagetable_params()` for that
+VM); add `boot.kernelParams = [ "msm.vm_log_shift=8" ]` for the driver's own
+vm-log ring as well.  With the shell running one IOVA was re-read every 8 s, so
+a capture started by hand also sees a fault within seconds.
 
 ### Fast iteration: building only the DRM modules
 
