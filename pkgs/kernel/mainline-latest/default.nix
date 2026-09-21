@@ -18,6 +18,13 @@
 # tag v6.17.0-sm8150) onto the version nixpkgs ships.  Keep them ordered: each
 # one applies on top of the previous ones.
 #
+# The kernel version therefore follows `flake.lock`: 7.2.6 is the minimum this
+# package is known to work with, because the 7.2.3 release is missing the msm
+# fixes that made the GPU fault under load (see README.md, "7.2.6 or newer").
+# Moving further up is a matter of updating the nixpkgs input and re-running
+# the patch application test; `linux_latest.override` cannot be used for this,
+# it does not propagate version/src.
+#
 # nixpkgs' common config stays enabled (default for `buildLinux`): this is a
 # stock upstream tree, so a standard NixOS capable .config is the right base
 # and only the nabu specific options in ./configs/nabu.config are merged on
@@ -68,14 +75,6 @@ let
       {
         name = "nabu-runtime-fixes";
         patch = ./patches/0007-nabu-runtime-fixes.patch;
-      }
-      {
-        # The UBWC rework made the GPU driver trust the UBWC configuration the
-        # boot firmware advertises; on nabu that makes the Adreno 640's CCU
-        # read unmapped addresses and the hangcheck reset the GPU under load.
-        # Pin the values the pre-rework driver (and the 6.17 fork kernel) used.
-        name = "nabu-a640-ubwc";
-        patch = ./patches/0009-drm-msm-a640-force-known-good-ubwc.patch;
       }
     ];
 

@@ -153,37 +153,49 @@ If this is picked up again, do it one half at a time, outside the IRQ-disabled
 path (for example as a delay in the UFS/DSI *drivers* rather than in the generic
 regmap clock helper), and verify with the diagnostics workflow below.
 
-### Adreno 640 UBWC: pinned to the pre-rework values
+### GPU faults under load: 7.2.6 or newer
 
-Under load (Firefox/WebRender) this kernel flooded dmesg with
+With 7.2.3, Firefox (WebRender) flooded dmesg with
 
 ```
 *** gpu fault: ttbr0=... iova=0000000101600000 dir=READ type=TRANSLATION source=CCU
 ```
 
 and the ring hangcheck then recovered the GPU (`hangcheck recover!`,
-`offending task: firefox:gdrv0`), which the client sees as a device reset and a
-short black screen.  The faulting block is the CCU, i.e. the part of the GPU
-that walks *compressed* (UBWC) surfaces, so the addresses are computed from the
-UBWC parameters.
+`offending task: firefox:gdrv0`), which the client reports as a device reset and
+shows as a short black screen.  The GPU was reading memory whose mapping had
+already been torn down.
 
-Since the upstream UBWC rework, the GPU driver trusts the UBWC configuration
-advertised by the boot firmware (`qcom_ubwc_config_get_data()` in
-`a6xx_gpu.c`); before that rework it overrode the values with swizzle `0x6` and
-highest bank bit `15` for every non-A8xx GPU — which is also what the pinned
-6.17 fork kernel boots this device with, without those faults.  On the Pad 5 the
-firmware's values do not produce working compressed-surface addressing, so
-`patches/0009-drm-msm-a640-force-known-good-ubwc.patch` reinstates the two
-pre-rework values for `adreno_is_a640()` only; everything else still comes from
-the firmware's configuration.
+That is a known bug in 7.2.3, fixed in the 7.2.y stable releases right after it
+(accepted between the 7.2.3 and 7.2.6 tags, so **7.2.6 is the minimum this
+package should be built from**):
 
-The display side is left alone: the same values are only forced into the GPU's
-own registers, exactly like the 6.17 kernel, which renders and scans out fine.
+* `drm/msm: Recover HW before retire hung submit` — retiring the hung submit
+  before recovering the GPU freed its BOs while the GPU was still reading them,
+  which is exactly the page-fault pattern above;
+* `drm/msm: remove objects from evit list after pinning them` (VM_BIND);
+* `drm/msm: dpu|dsi|dp: Drop sneaky dev_pm_opp_set_rate(0)` — the display
+  pipeline could run without the power backing its required-opps ask for, which
+  is also a candidate for the higher idle draw;
+* `drm/msm/dsi: round 6G byte clock rate to the PLL-achievable value` and the
+  bonded-mode PLL revert — panel glitches on runtime DCS commands;
+* `drm/msm/a6xx: Fix stale rpmh votes after suspend` and the a6xx recovery
+  IRQ-storm fixes.
 
-When this is revisited, the useful checks are the ones the patch makes cheap:
-`dmesg | grep -i 'gpu fault'` under the same Firefox workload (should be empty),
-and reading the parameters back through `MSM_PARAM_UBWC_SWIZZLE` /
-`MSM_PARAM_HIGHEST_BANK_BIT` if a tool for that is available.
+The kernel version follows `flake.lock`; the nixpkgs input was updated to the
+revision that ships 7.2.6 (`20b1ddd1`, 2026-09-19).  `linux_latest.override`
+cannot be used to select a kernel version — it silently keeps whatever version
+the pinned nixpkgs has — so version bumps go through the flake input, followed
+by a patch application test (the seven patches still apply to 7.2.6 with no
+rejects).
+
+An earlier attempt blamed the UBWC parameter rework and forced the pre-rework
+swizzle/highest-bank-bit values for `adreno_is_a640()`.  That made no
+difference to the faults and was reverted; the UBWC code is identical in 7.2.3
+and 7.2.6.
+
+To check a future kernel: run the same Firefox workload and
+`sudo dmesg | grep -iE 'gpu fault|hangcheck recover'` — both should stay quiet.
 
 Still not verified: a successful boot.  If the next on-device attempt fails
 again, the log is at `/sys/fs/pstore/console-ramoops-0` — boot the working
