@@ -123,6 +123,9 @@ ttbr_re() {
 	local hex="$1"
 	printf 'ttbr=((0x)?%s|%s)([^0-9a-f]|$)' "$hex" "$((16#$hex))"
 }
+# Values in the trace may carry a 0x prefix (BSD sed has no \?, so match the x
+# as part of the character class and strip it afterwards).
+strip0x() { printf '%s' "${1#0x}"; }
 mmu_of() { # mmu_of <trace> -> uniq mmu values
 	grep -oE 'mmu=(0x)?[0-9a-f]+' "$1" 2>/dev/null | sed 's/mmu=0x\?//' | sort -u
 }
@@ -304,7 +307,8 @@ analysis() {
 		local mmu d v
 		mmu=$(grep -E ": ptparams:" "$trace" 2>/dev/null |
 			grep -E "$(ttbr_re "$n_ttbr")" | tail -1 |
-			sed -n 's/.*mmu=0x\?\([0-9a-f]*\).*/\1/p' || true)
+			sed -n 's/.*mmu=\([0-9a-fx]*\).*/\1/p' || true)
+		mmu=$(strip0x "$mmu")
 		if [[ -n "$mmu" ]]; then
 			d=$(count_in ": ptdestroy:.*mmu=(0x)?$mmu\b" "$before")
 			echo "  mmu for ttbr0=$n_ttbr: $mmu"
@@ -335,6 +339,33 @@ analysis() {
 				echo "     so that it is already active when the VM is created)"
 			fi
 		fi
+	} >>"$summary"
+
+	# Teardown and page-table identity, so a fault can be matched to a VM even
+	# when that VM was created before the capture started.
+	{
+		echo
+		echo "--- mmu -> ttbr (from ptparams) ---"
+		grep -E ': ptparams:' "$trace" 2>/dev/null |
+			awk '{
+				mmu=""; ttbr="";
+				for (i = 1; i <= NF; i++) {
+					if ($i ~ /^mmu=/) { mmu = $i; sub("mmu=", "", mmu); sub("^0x", "", mmu) }
+					if ($i ~ /^ttbr=/) {
+						ttbr = $i; sub("ttbr=", "", ttbr)
+						if (ttbr ~ /^0x/) sub("^0x", "", ttbr)
+						else if (ttbr != "" && ttbr !~ /[a-f]/) ttbr = sprintf("%x", ttbr)
+					}
+				}
+				if (mmu != "" && ttbr != "") printf "    %s -> %s\n", mmu, ttbr
+			}' | sort -u || true
+		echo "--- page table / VM teardown in the window ---"
+		grep -E ': ptdestroy:' "$trace" 2>/dev/null |
+			sed -n 's/.*\([0-9][0-9]*\.[0-9]*\): ptdestroy:.*mmu=\([0-9a-fx]*\).*/    t=\1 ptdestroy mmu=\2/p' || true
+		grep -E ': vmfree:' "$trace" 2>/dev/null |
+			sed -n 's/.*\([0-9][0-9]*\.[0-9]*\): vmfree:.*gpuvm=\([0-9a-fx]*\).*/    t=\1 vmfree \2/p' || true
+		echo "--- last VM ops before the end of the window ---"
+		grep -E ': vmop:' "$trace" 2>/dev/null | tail -8 | sed 's/^/    /' || true
 	} >>"$summary"
 
 	{
