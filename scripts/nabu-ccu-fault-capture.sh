@@ -42,7 +42,7 @@ GRACE=240
 OUT=""
 PACKAGE=1
 ANALYZE_ONLY=""
-PROBES=(vmop ptparams ptmap ptunmap ptdestroy vmfree unusable)
+PROBES=(vmop vmunmap ptparams ptmap ptunmap ptdestroy vmfree unusable)
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -118,11 +118,14 @@ count_in() { # count_in <pattern> <file>
 # fetched memory (+0($argN):u64) as decimal, and a newer version of this script
 # asks for :x64.  dmesg zero-pads its values (iova=000000010aa30000) while the
 # trace does not (iova=0x10aa30000), so accept both.
-iova_re() { printf 'iova=(0x)?0*%s([^0-9a-f]|$)' "$1"; }
-ttbr_re() {
-	local hex="$1"
-	printf 'ttbr=((0x)?%s|%s)([^0-9a-f]|$)' "$hex" "$((16#$hex))"
+# Match a named value in either form it can appear in: 0x-prefixed hex,
+# zero-padded hex (dmesg) or plain decimal (fetched memory without :x64).
+val_re() {
+	local name="$1" hex="$2"
+	printf '%s=((0x)?0*%s|%s)([^0-9a-f]|$)' "$name" "$hex" "$((16#$hex))"
 }
+iova_re() { val_re iova "$1"; }
+ttbr_re() { val_re ttbr "$1"; }
 # Values in the trace may carry a 0x prefix (BSD sed has no \?, so match the x
 # as part of the character class and strip it afterwards).
 strip0x() { printf '%s' "${1#0x}"; }
@@ -298,6 +301,20 @@ analysis() {
 			printf '  iova=%-12s events=%-4s ptmap=%-4s ptunmap=%-4s %s\n' \
 				"$iv" "$hits" "$mapped" "$unmapped" "$reasons"
 			printf '    faults: %s\n' "$(timeline_for_iova "$iv" "$dmesg" "$trace" | close_window_summary)"
+			local nunmap
+			nunmap=$(count_in ": vmunmap:.*$(val_re va "$iv")" "$trace")
+			printf '    unmaps of this VA in the window: %s\n' "$nunmap"
+			if [[ "$nunmap" != "0" ]]; then
+				grep -E ": vmunmap:.*$(val_re va "$iv")" "$trace" 2>/dev/null |
+					awk '{ ts=""; rs="";
+						for (i = 1; i <= NF; i++) {
+							if ($i ~ /^[0-9]+\.[0-9]+:$/ && $(i+1) ~ /^vmunmap:$/) { ts = $i; sub(":$", "", ts) }
+							if ($i ~ /^reason=/) rs = $i
+						}
+						if (ts != "") printf "      t=%s %s\n", ts, rs
+					}' |
+					tail -6 || true
+			fi
 			printf '    timeline (last 12):\n'
 			timeline_for_iova "$iv" "$dmesg" "$trace" | tail -12 | sed 's/^/      /'
 		done
@@ -479,6 +496,10 @@ arm() {
 }
 
 arm 'p:vmop vm_log vm=%x0 op=+0(%x1):string iova=%x2 range=%x3 qid=%x4'
+# The VA of the mapping being torn down plus the reason ("close", "vma_put",
+# "unmap", ...), i.e. the direct answer to "who removed this VA, and when".
+# drm_gpuva.va.addr sits at offset 24 (vm, vm_bo, flags + padding).
+arm 'p:vmunmap msm_gem_vma_unmap vma=%x0 reason=+0(%x1):string va=+24(%x0):x64'
 arm 'r:ptparams msm_iommu_pagetable_params mmu=$arg1 ttbr=+0($arg2):x64 asid=+0($arg3):x32'
 arm 'p:ptmap msm_iommu_pagetable_map mmu=%x0 iova=%x1 sgt=%x2 len=%x4'
 arm 'p:ptunmap msm_iommu_pagetable_unmap mmu=%x0 iova=%x1 len=%x2'
