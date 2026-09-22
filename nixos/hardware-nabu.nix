@@ -173,64 +173,30 @@
   };
 
   # == Audio (quad speakers, CS35L41 amplifiers) ==============================
-  # WORKAROUND: WirePlumber/ACP has no working UCM for this card yet, so we
-  # bypass UCM entirely:
-  #   - nabu-speaker-route arms the CS35L41 TDM route directly at boot (the
-  #     QUAT_TDM_RX_0 mixer + the four soft-ramp/volume controls) — the job
-  #     the UCM EnableSequence would normally do.
-  #   - a WirePlumber rule sets api.alsa.use-ucm=false and api.alsa.pcm=hw:0,0
-  #     so PipeWire exposes the card as a plain stereo sink.
-  # (Same approach as Mooling0602's nabu-nixos-kde-config.)
+  # The four CS35L41 amps hang off the QUAT_TDM_RX_0 backend.  Bringing them
+  # up needs the Q6AFE frontend→backend route plus the per-amp soft-ramp and
+  # volume csets; both live in the ALSA UCM profile (pkgs/alsa-ucm, packaged
+  # as pkgs.nabu-alsa-ucm), which WirePlumber/ACP consumes to build the card's
+  # profiles and ports.  (This replaces the old workaround: a boot-time amixer
+  # service plus a WirePlumber rule that bypassed UCM and forced hw:0,0.)
   #
-  # The proper fix is to load the UCM profile (pkgs.nabu-alsa-ucm, kept as a
-  # fallback in pkgs/default.nix) through alsa-ucm-conf; revisit once
-  # WirePlumber/ACP can consume this card's UCM.
-  systemd.services.nabu-speaker-route = {
-    description = "Enable nabu speaker route (CS35L41)";
-    wantedBy = [ "multi-user.target" ];
-    after = [ "systemd-udevd.service" ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      ExecStart = pkgs.writeShellScript "nabu-speaker-route" ''
-        AMIXER=${pkgs.alsa-utils}/bin/amixer
-        i=0
-        while [ $i -lt 25 ]; do
-          $AMIXER -c0 cget "name='QUAT_TDM_RX_0 Audio Mixer MultiMedia1'" >/dev/null 2>&1 && break
-          sleep 1
-          i=$((i+1))
-        done
-        $AMIXER -c0 cset "name='QUAT_TDM_RX_0 Audio Mixer MultiMedia1'" 1
-        for a in BR TR BL TL; do
-          $AMIXER -c0 cset "name='$a PCM Soft Ramp'" 4ms
-          $AMIXER -c0 cset "name='$a Analog PCM Volume'" 5
-        done
-      '';
-    };
-  };
-
-  # Expose the X5 card to PipeWire as a plain hw:0,0 sink (no UCM profile).
-  environment.etc."xdg/wireplumber/wireplumber.conf.d/51-nabu-speaker.conf".text = ''
-    monitor.alsa.rules = [
-      {
-        matches = [
-          { device.name = "alsa_card.platform-sound" }
-        ]
-        actions = {
-          update-props = {
-            api.alsa.pcm = "hw:0,0"
-            api.alsa.use-ucm = false
-            node.name = "nabu-speakers"
-            node.description = "内置扬声器 (CS35L41)"
-            audio.format = "S16LE"
-            audio.rate = 48000
-            audio.channels = 2
-            audio.position = [ FL FR ]
-          }
-        }
-      }
-    ]
-  '';
+  # ALSA looks the profile up as ucm2/conf.d/<CardDriver>/<CardDriver>.conf,
+  # where CardDriver is the kernel's card->driver_name ("sm8150"); the
+  # platform driver / module names ("snd-sm8150", "snd_soc_sm8150") are never
+  # queried.  nixpkgs' alsa-lib resolves ucm2 through a symlink inside its own
+  # store path (<alsa-lib>/share/alsa/ucm2 -> alsa-ucm-conf), so our profile
+  # is only visible when ALSA_CONFIG_UCM2 points at pkgs.alsa-ucm-conf-nabu —
+  # the stock alsa-ucm-conf tree merged with the nabu profile, because the
+  # variable *replaces* the whole search directory (alsa-lib src/ucm/utils.c).
+  # Session variables reach user services through PAM; the per-service copies
+  # are belt-and-braces for the processes that probe UCM.  ALSA use outside
+  # PipeWire (e.g. a raw aplay) needs `alsaucm -c hw:0 set _verb HiFi` first.
+  environment.sessionVariables.ALSA_CONFIG_UCM2 =
+    "${pkgs.alsa-ucm-conf-nabu}/share/alsa/ucm2";
+  systemd.user.services.pipewire.environment.ALSA_CONFIG_UCM2 =
+    "${pkgs.alsa-ucm-conf-nabu}/share/alsa/ucm2";
+  systemd.user.services.wireplumber.environment.ALSA_CONFIG_UCM2 =
+    "${pkgs.alsa-ucm-conf-nabu}/share/alsa/ucm2";
 
   # == Quirks =================================================================
   # Force /dev/rtc symlink to rtc1 (pm8150 RTC keeps time when powered off)
