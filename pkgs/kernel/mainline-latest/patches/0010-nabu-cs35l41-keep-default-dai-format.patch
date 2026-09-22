@@ -1,0 +1,66 @@
+From: NixOS for nabu
+Subject: [PATCH] ASoC: qcom: sm8150: keep the speaker amplifiers' default DAI format
+
+sm8150_snd_startup() configures the Speaker Playback link
+(QUATERNARY_TDM_RX_0) with a codec DAI format of NB_NF|DSP_A.  It
+applies that format to the first codec of the link only, because the
+helper call is snd_soc_rtd_to_codec(rtd, 0); on nabu that is
+cs35l41_br, while the remaining three amplifiers were never touched.
+
+For cs35l41, DSP_A means "clear CS35L41_ASP_FMT" (cs35l41_set_dai_fmt()
+leaves daifmt at 0 for SND_SOC_DAIFMT_DSP_A), which moves SP_FORMAT from
+its default 0x18180200 (ASP_FMT = 2, I2S framing; see the reg_defaults
+in cs35l41-lib.c) to 0x18180000.
+
+Exactly that first amplifier is the one reported silent on nabu while
+the other three play.  The forced DSP_A format is therefore the only
+software difference between the working and the silent amplifier, and
+the AFE TDM port is set up for long sync (qcom,tdm-sync-mode = 1,
+qcom,tdm-invert-sync = 1 in the q6afedai node), which the amplifier
+default (I2S) framing matches rather than DSP_A.
+
+Stop overriding the amplifier DAI format so that all four CS35L41s stay
+on their power-on default.  The CPU DAI format (fmt) is still
+configured as before.
+
+Hardware check that confirms/refutes the reasoning: read SP_FORMAT
+(register 0x00004808, 4-byte big-endian address and value, i2c7,
+addresses 0x40..0x43) on all four amplifiers while audio plays - before
+this patch the first one reads back without the ASP_FMT bits set.
+
+Signed-off-by: NixOS for nabu
+
+diff --git a/sound/soc/qcom/sm8150.c b/sound/soc/qcom/sm8150.c
+--- a/sound/soc/qcom/sm8150.c
++++ b/sound/soc/qcom/sm8150.c
+@@ -298,23 +298,26 @@
+ static int sm8150_snd_startup(struct snd_pcm_substream *substream)
+ {
+ 	unsigned int fmt = SND_SOC_DAIFMT_CBC_CFC;
+-	unsigned int codec_dai_fmt = SND_SOC_DAIFMT_CBC_CFC;
+ 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+ 	struct snd_soc_card *card = rtd->card;
+ 	struct sm8150_snd_data *data = snd_soc_card_get_drvdata(card);
+ 	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
+-	struct snd_soc_dai *codec_dai = snd_soc_rtd_to_codec(rtd, 0);
+ 
+ 	switch (cpu_dai->id) {
+ 	case QUATERNARY_TDM_RX_0:
+-		codec_dai_fmt |= SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_DSP_A;
+ 		if (++(data->quat_tdm_clk_count) == 1) {
+ 			snd_soc_dai_set_sysclk(cpu_dai,
+ 				Q6AFE_LPASS_CLK_ID_QUAD_TDM_IBIT,
+ 				12288000, SNDRV_PCM_STREAM_PLAYBACK);
+ 		}
+ 		snd_soc_dai_set_fmt(cpu_dai, fmt);
+-		snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
++		/*
++		 * Leave the amplifier DAI format at its default ASP format
++		 * (I2S): the AFE TDM port runs with long sync, which matches
++		 * it, while the DSP_A format that used to be forced here (and
++		 * only on the first codec of the link) cleared ASP_FMT and
++		 * silenced exactly that amplifier (cs35l41_br on nabu).
++		 */
+ 		break;
+ 	case SLIMBUS_0_RX...SLIMBUS_6_TX:
+ 		break;

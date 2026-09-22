@@ -18,6 +18,9 @@
 #   0009  A640/A680 CX GBIF initialization: 7.2.6 moved those writes into the
 #         catalog's `gbif_cx` list and left the two GEN2 entries without one,
 #         so they stopped happening
+#   0010  keep the speaker amplifiers on their default (I2S) DAI format: the
+#         machine driver forced DSP_A on the first codec of the link only,
+#         which silenced exactly that amplifier (cs35l41_br) on nabu
 #
 # The patches are a rebase of the sm8150-mainline tree (branch sm8150/6.17,
 # tag v6.17.0-sm8150) onto the version nixpkgs ships.  Keep them ordered: each
@@ -98,6 +101,18 @@ let
         # see docs/kernel-gpu-fault.md, section 12.
         name = "nabu-a640-gbif";
         patch = ./patches/0009-drm-msm-a6xx-restore-a640-gbif.patch;
+      }
+      {
+        # The machine driver forced NB_NF|DSP_A onto the first codec DAI of
+        # the Speaker Playback link only (snd_soc_rtd_to_codec(rtd, 0) =
+        # cs35l41_br on nabu).  cs35l41_set_dai_fmt() implements DSP_A as
+        # "clear ASP_FMT", moving that amplifier's SP_FORMAT from the I2S
+        # default (0x18180200) to 0x18180000 - and exactly that first
+        # amplifier is the one reported silent, while the three the code
+        # never configured play.  Keep all four on the default format,
+        # which also matches the AFE TDM port's long sync.
+        name = "nabu-cs35l41-keep-default-dai-format";
+        patch = ./patches/0010-nabu-cs35l41-keep-default-dai-format.patch;
       }
     ];
 

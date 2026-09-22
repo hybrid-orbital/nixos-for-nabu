@@ -201,6 +201,19 @@ let
         patch = ./patches/0001-drm-msm-dsi-Move-MI_DRM_BLANK_UNBLANK-notification-t.patch;
       }
       {
+        # sm8150_snd_startup() forced NB_NF|DSP_A onto the *first* codec DAI
+        # of the Speaker Playback link only (snd_soc_rtd_to_codec(rtd, 0)),
+        # which on nabu is cs35l41_br; cs35l41_set_dai_fmt() implements
+        # DSP_A as "clear ASP_FMT", so that amplifier's SP_FORMAT moves from
+        # its I2S default (0x18180200) to 0x18180000.  Exactly that first
+        # amplifier is the one reported silent while the other three (never
+        # touched by this code) play.  Leave the amplifier format alone so
+        # all four keep their power-on default, which also matches the AFE
+        # TDM port's long sync (qcom,tdm-sync-mode = 1).
+        name = "nabu-cs35l41-keep-default-dai-format";
+        patch = ./patches/0006-nabu-cs35l41-keep-default-dai-format.patch;
+      }
+      {
         name = "nabu-defconfig";
         patch = defconfigPatch;
       }
