@@ -26,7 +26,7 @@ in `default.nix`), so choosing the kernel for the *system* means setting it in
 configuration like any other option:
 
 ```nix
-# nixos/configuration.nix, or a module of your own
+# reference/default.nix, or a module of your own
 {
   nabu.kernel.name = "mainline-latest";
 }
@@ -68,6 +68,11 @@ tracks upstream and is the kernel under test: it is expected to gain the
 remaining downstream drivers as they are rebased, and to eventually replace
 the fork once it is verified on hardware.
 
+`mainline-latest` inherits nixpkgs' DWARF and BTF configuration so BPF CO-RE
+programs can use `/sys/kernel/btf/vmlinux`. Its post-configure check requires
+`CONFIG_DEBUG_INFO_BTF=y`, module BTF, `BPF_SYSCALL` and `BPF_JIT`. This costs
+build time and space; it only changes `mainline-latest`, not the default fork.
+
 ### Status of `mainline-latest`
 
 Verified:
@@ -107,7 +112,7 @@ both fixed since:
   QMP UFS PHY is matched through the device tree, not through a symbol
   dependency, so it was not pulled into the initramfs automatically and
   `ufs_qcom_init()` returned `-EPROBE_DEFER` forever: the root filesystem
-  never appeared.  `nixos/hardware-nabu.nix` now lists `phy_qcom_qmp_ufs`,
+  never appeared.  `modules/platform.nix` now lists `phy_qcom_qmp_ufs`,
   `qcom_refgen_regulator`, `phy_qcom_qmp_combo` and `typec`, and
   `configs/nabu.config` builds the pstore backends in so a boot that still
   fails leaves its log in the ramoops region.
@@ -291,7 +296,7 @@ that should settle them — is in
 The capture tooling stays for whoever picks this up: a capture has to be
 running *before* the fault, and the first fault of a boot happens while the
 shell comes up, in a VM created earlier.
-`nixos/debug/ccu-capture.nix` runs the script as a systemd service before
+`modules/debug/ccu-capture.nix` runs the script as a systemd service before
 `graphical.target` (which is what gets `msm_iommu_pagetable_params()` for that
 VM); add `boot.kernelParams = [ "msm.vm_log_shift=8" ]` for the driver's own
 vm-log ring as well.  With the shell running one IOVA was re-read every 8 s, so
@@ -326,7 +331,7 @@ That was measured on hardware too: booting the *unpatched* rebuild leaves the
 panel dark exactly like the candidate.  A patch that has to reach the device
 therefore belongs to the kernel package (`patches/` or `boot.kernelPatches`),
 and this shortcut is left to build-time iteration and to the observability
-below (`nixos/debug/a640-gbif-fix.nix` installs the vm-log instrumented module;
+below (`modules/debug/a640-gbif-fix.nix` installs the vm-log instrumented module;
 kprobes need no swapped module at all).
 
 `pkgs/kernel/mainline-latest/msm-module.nix` unpacks the kernel source, applies

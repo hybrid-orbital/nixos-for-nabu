@@ -133,7 +133,7 @@ kernel.overrideAttrs (previousAttrs: {
   # as "CONFIG_FOO=y", because building a driver in instead of as a module
   # keeps both the root filesystem and the panel reachable.
   postConfigure = (previousAttrs.postConfigure or "") + ''
-    echo ">>> checking nabu boot-critical kernel configuration"
+    echo ">>> checking required nabu kernel configuration"
     while IFS= read -r requirement; do
       case "$requirement" in
         ""|'#'*) continue ;;

@@ -15,9 +15,9 @@ in cs35l41-lib.c) to 0x18180000.
 Exactly that first amplifier is the one reported silent on nabu while
 the other three play.  The forced DSP_A format is therefore the only
 software difference between the working and the silent amplifier, and
-the AFE TDM port is set up for long sync (qcom,tdm-sync-mode = 1,
-qcom,tdm-invert-sync = 1 in the q6afedai node), which the amplifier
-default (I2S) framing matches rather than DSP_A.
+the three working ones stay on the power-on default (I2S), which
+matches the AFE TDM port (see the qcom,tdm-* sync options in the
+q6afedai node).
 
 Stop overriding the amplifier DAI format so that all four CS35L41s stay
 on their power-on default.  The CPU DAI format (fmt) is still
@@ -56,9 +56,9 @@ diff --git a/sound/soc/qcom/sm8150.c b/sound/soc/qcom/sm8150.c
 -		snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
 +		/*
 +		 * Leave the amplifier DAI format at its default ASP format
-+		 * (I2S): the AFE TDM port runs with long sync, which matches
-+		 * it, while the DSP_A format that used to be forced here (and
-+		 * only on the first codec of the link) cleared ASP_FMT and
++		 * (I2S): the three amplifiers that play were never touched by
++		 * this code, while the DSP_A format that used to be forced here
++		 * (and only on the first codec of the link) cleared ASP_FMT and
 +		 * silenced exactly that amplifier (cs35l41_br on nabu).
 +		 */
  		break;
