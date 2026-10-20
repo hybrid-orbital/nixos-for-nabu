@@ -67,6 +67,14 @@ in
         directory = "/var/lib/bluetooth";
         mode = "0700";
       }
+    ]
+    ++ lib.optionals (config.nabu.sensors.enable or false) [
+      {
+        directory = "/var/lib/nabu-sensors";
+        mode = "0700";
+      }
+    ]
+    ++ [
       "/var/lib/systemd"
       "/var/log"
       {

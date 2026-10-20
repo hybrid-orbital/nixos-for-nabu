@@ -70,9 +70,9 @@ the fork once it is verified on hardware.
 
 Both kernels enable the nabu SLPI sensor DSP and carry the reviewed FastRPC
 sensors-PD remote-heap fix. `xiaomi-nabu-firmware` installs `slpi_nb.mbn` and
-the HexagonFS sensor data seed. This is the kernel/firmware bring-up step;
-hexagonrpcd, writable registry state and the SSC userspace service setup still
-need configuring and testing on the device. See the
+the HexagonFS sensor data seed. `nixos/sensors.nix` enables hexagonrpcd,
+writable/persistent registry state and the SSC proxy, and installs libssc's
+gyro reader (`ssccli --sensor gyroscope`). Hardware validation is still pending. See the
 [sensor investigation and validation steps](../../docs/zh_CN/iio-sensors-investigation.md).
 
 `mainline-latest` inherits nixpkgs' DWARF and BTF configuration so BPF CO-RE

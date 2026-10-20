@@ -6,8 +6,8 @@ Kumar-Jy 参考树固定到 `739161a890128f23bd1aa679d8754a9ea299269e`，避免�
 
 **结论：缺的是 SLPI/SSC 的完整访问链路，不能通过多开几个 IIO 芯片驱动解决。**
 优先测试“启用 SLPI + 一行 FastRPC 修复”，配套安装已有固件和用户态服务。
-本次提交已将补丁接入两个内核构建，并安装固件与 HexagonFS 数据种子；
-用户态运行服务尚未启用，没有 nabu 真机验证。内核完整编译由 GitHub CI 完成。
+补丁已接入两个内核构建，固件包安装 SLPI 镜像与 HexagonFS 数据种子；
+用户态由 `nixos/sensors.nix` 默认启用。尚无 nabu 真机验证，完整构建交由 CI 完成。
 
 ## 缺在哪里
 
@@ -64,47 +64,53 @@ iio-sensor-proxy 的 SSC 后端直接使用这个库。
 不需要新增 SoC 驱动或整个 IIO 子系统补丁。注意 remote-heap 分配路径不等于
 把 `slpi_mem` 改成 DMA 池；不要将 DSP 固件保留区复用成共享分配区。
 
-## 必须配套的 NixOS 改动
+## 已接入的 NixOS 用户态
 
-**只应用内核补丁，还不会得到可用传感器。** 固件安装已完成，用户态步骤仍待配置：
+`nabu.sensors.enable` 默认为 `true`，同时适用于 ext4 和 impermanent 系统。
+实现位于 [sensors.nix](../../nixos/sensors.nix)，不需要手动启动服务：
 
-1. 已在 `pkgs/nabu-firmware.nix` 现有安装逻辑中增加：
-
-   ```sh
-   cp -a slpi_nb.mbn "$fw/qcom/sm8150/xiaomi/nabu/"
-   mkdir -p "$out/share/qcom/sm8150/xiaomi/nabu"
-   cp -a hexagonfs/. "$out/share/qcom/sm8150/xiaomi/nabu/"
-   ```
-
-   原 source/ref/hash 保持不变。已修正 `pkgs/linux-firmware-nabu.nix` 中把传感器
-   固件说成 `adsp.mbn` 的注释：nabu 这里需要单独的 SLPI 镜像。
-2. 首次启动时把该 HexagonFS 树复制到可写的 `/var/lib/nabu-sensors/`，
-   解引用 store 符号链接并设置目录/文件可写；后续保留 registry 和校准数据，
-   不要每次开机用种子覆盖。现有源已经有 registry，可先使用，无需盲目重新生成。
-   impermanence 配置也应持久化这个目录。
-3. 新增 root systemd 服务，使用 `StateDirectory=nabu-sensors`，运行：
+1. `xiaomi-nabu-firmware` 安装 `slpi_nb.mbn`，以及
+   `share/qcom/sm8150/xiaomi/nabu/` 下的 HexagonFS 数据，保留原 source/ref/hash。
+2. hexagonrpcd 使用 `StateDirectory=nabu-sensors`，权限 `0700`。首次启动时将种子
+   解引用复制到临时目录、设为可写，再原子发布到
+   `/var/lib/nabu-sensors/hexagonfs`。后续启动和配置切换不覆盖 registry/校准数据；
+   impermanent 系统已持久化 `/var/lib/nabu-sensors`。
+3. `hexagonrpcd.service` 以 root 运行：
 
    ```sh
-   hexagonrpcd -f /dev/fastrpc-sdsp -d sdsp -s -R /var/lib/nabu-sensors
+   hexagonrpcd -f /dev/fastrpc-sdsp -d sdsp -s -R /var/lib/nabu-sensors/hexagonfs
    ```
 
-   使用 nixpkgs 的 `pkgs.hexagonrpc`；为设备节点尚未出现、PD 尚未就绪和 DSP
-   重启安排重试。`ConditionPathExists=` 单独使用会跳过服务且不会自动重试。
-   代理也应在 SSC 能枚举传感器后启动/重新探测，不能仅靠固定延迟。
+   节点未出现或进程退出时，每 5 秒重试。启动后使用 libssc 自带的 `ssccli`
+   分别枚举、打开 accel/light，各运行 1 秒后关闭；失败时每 2 秒重试，不立即拆掉正常的 FastRPC 连接。
+   启动总超时 90 秒，超时后重启。现有种子已包含 registry，无需每次重新生成。
    [hexagonrpc 文档](https://github.com/linux-msm/hexagonrpc/tree/v0.5.0)
-   说明了文件树和 `-R`；不需要为这个静态 PD 另行创建 `fastrpc_shell_2`。
-4. 锁定的 nixpkgs 已有 `hexagonrpc 0.5.0`、`libssc 0.4.4` 和
-   `iio-sensor-proxy 3.9`，后者已显式 `-Dssc-support=enabled`，无需另找 patched 版本。
-   把代理包注册到 `environment.systemPackages`、`services.dbus.packages`、
-   `services.udev.packages`、`systemd.packages`。通常可用
-   `hardware.sensor.iio.enable = true`；但该 NixOS 模块还会向 initrd 加入
-   `hid-sensor-hub`，fork 必须先确认有这个模块，否则直接做上述四项注册，
-   避免无关 HID 模块破坏 initrd 构建。
+   说明了 `-R` 文件树和静态 sensors PD 的用途。
+4. `iio-sensor-proxy.service` 等待上述启动检查完成，才允许包括 udev 请求在内的
+   启动操作继续。它通过 `BindsTo` 随 hexagonrpcd 停止，通过 `Upholds` 在其恢复后
+   重新启动，避免继续使用旧的 DSP 枚举结果。代理保留上游允许 `AF_QIPCRTR` 的服务配置。
+5. 已注册 SSC-enabled iio-sensor-proxy 的 D-Bus、udev、systemd 包，并为
+   `fastrpc-sdsp` 增加 `ssc-accel` 标记。直接注册包，避免 stock
+   `hardware.sensor.iio.enable` 向 fork 的 initrd 引入不存在的 `hid-sensor-hub`。
+   轴变换仍交给 SEE 的设备配置，未照搬参考系统的 mount matrix。
+
+锁定的 nixpkgs 提供 `hexagonrpc 0.5.0`、`libssc 0.4.4` 和启用 SSC 的
+`iio-sensor-proxy 3.9`。需要临时停用时，设置 `nabu.sensors.enable = false`。
+
+重建系统或镜像并启动后，可运行：
+
+```sh
+systemctl status hexagonrpcd iio-sensor-proxy
+journalctl -b -u hexagonrpcd -u iio-sensor-proxy
+monitor-sensor --accel
+monitor-sensor --light
+ssccli --sensor gyroscope --timeout 10
+```
 
 自动旋转使用加速度计；3.9 的 SSC 后端只有 accel/light/compass/proximity，
-`monitor-sensor` 不是陀螺仪采样工具。读取 gyro 应使用已打包的 libssc 0.4.4：
-`ssc_sensor_gyroscope_new_sync()`、连接 `measurement(x,y,z)` 信号、
-`ssc_sensor_gyroscope_open_sync()` 并运行 GLib 主循环。
+`monitor-sensor` 不是陀螺仪采样工具。已安装的 `ssccli` 使用 libssc 0.4.4
+读取三轴值，上例运行 10 秒后关闭传感器，无需另外编写采样程序。
+当前没有自动修改 niri 输出变换；这里先提供传感器访问及桌面代理。
 如果应用硬性要求 `/dev/iio:deviceN`/`in_anglvel_*` ABI，则还需要独立的 SEE→IIO
 桥接工作；本方案不声称实现了这个接口。
 
@@ -129,6 +135,9 @@ dtc 1.7.2 编译成功：fork DTB 为 106808 字节，mainline 为 106876 字节
 `0x97b00000/0x1400000`。没有进行完整内核编译、最终 Kconfig 构建或真机测试。
 接入构建后，两个内核 derivation 的求值及
 `nix flake check --no-build --all-systems` 均通过。
+用户态接入后重新通过上述求值检查；已执行 `sensors-state` 检查脚本，确认只读种子
+可复制为可写状态、符号链接被解引用、已有校准不会覆盖、失败复制可清理并重试。
+另已检查 impermanent 持久化及关闭 `nabu.sensors.enable` 时的配置。
 真机按链路逐段验证，避免把“SLPI running”当成传感器已可用：
 
 1. 对两个内核分别构建、启动；检查最终配置和 DTB，确认 SLPI 的固件路径、
@@ -145,5 +154,5 @@ dtc 1.7.2 编译成功：fork DTB 为 106808 字节，mainline 为 106876 字节
 完整构建入口仍是 `nix build .#nabu-kernel-sm8150-fork` 和
 `nix build .#nabu-kernel-mainline-latest`。Push 本次提交后，手动运行
 `.github/workflows/build-kernel.yml`，其矩阵会分别构建并缓存两个内核。
-该工作流只构建内核；新版固件包将在后续系统/镜像构建时安装。
+该工作流只构建内核；新版固件包和用户态配置需要后续系统/镜像构建才会安装。
 本次没有刷写设备或改变内核选择。

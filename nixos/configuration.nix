@@ -66,6 +66,7 @@ in
 {
   imports = [
     ./hardware-nabu.nix
+    ./sensors.nix
     ./boot.nix
     ./niri.nix
     ./storage

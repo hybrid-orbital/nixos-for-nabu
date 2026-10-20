@@ -48,6 +48,9 @@
     in
     {
       checks = lib.genAttrs [ "x86_64-linux" "aarch64-linux" ] (system: {
+        sensors-state = import ./tests/sensors-state.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+        };
         filesystem-images = import ./tests/filesystem-images.nix {
           pkgs = nixpkgs.legacyPackages.${system};
           inherit lib;

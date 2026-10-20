@@ -150,7 +150,8 @@
 
   # == Qualcomm remoteproc services ==========================================
   # Match Fedora's nabu preset: Linux 6.17 provides the QRTR name service and
-  # PD mapper in-kernel, while userspace only runs rmtfs and tqftpserv.
+  # PD mapper in-kernel. rmtfs and tqftpserv serve the other coprocessors;
+  # sensors.nix configures the SLPI's hexagonrpcd and SSC proxy separately.
   systemd.services.rmtfs = {
     description = "Qualcomm remotefs service";
     before = [ "NetworkManager.service" ];
