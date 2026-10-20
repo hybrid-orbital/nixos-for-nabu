@@ -11,6 +11,8 @@ let
   seed = "${pkgs.xiaomi-nabu-firmware}/share/qcom/sm8150/xiaomi/nabu";
 in
 {
+  imports = [ ./sensors-recovery.nix ];
+
   options.nabu.sensors.enable = lib.mkEnableOption "nabu SLPI sensors" // {
     default = true;
   };

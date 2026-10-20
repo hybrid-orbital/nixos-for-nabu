@@ -6,13 +6,13 @@
 # Usage: sudo bash scripts/nabu-diagnostics.sh [OUTPUT_PARENT]
 #
 # The bundle is written to OUTPUT_PARENT/nabu-diag-<host>-<release>-<utc>/ and
-# nothing outside it is touched: the script only reads /proc, /sys and debugfs.
+# Diagnostics are read from /proc, /sys, debugfs, the journal and pstore archives.
 # Run it as root — clocks, power domains, regulators, pstore and the USB/typec
 # state are root-only.
 #
 # Collected (see docs/boot-logging.md for what to look at):
 #   meta/     kernel, cmdline, model, running generation, live DTB
-#   pstore/   records of the *previous* boot, i.e. a crash or a hang
+#   pstore/   raw and systemd-archived records of previous crashes or hangs
 #   clocks/   clk_summary, pm_genpd_summary, regulator_summary, runtime PM
 #   idle/     cpuidle state usage/time, cpufreq, thermal zones
 #   irq/      two /proc/interrupts snapshots 30 s apart plus their delta
@@ -79,6 +79,12 @@ if compgen -G "/sys/fs/pstore/*" >/dev/null; then
   cp -a /sys/fs/pstore/. "$out/pstore/" 2>/dev/null || note "could not copy /sys/fs/pstore"
 else
   note "no pstore records (previous boot left none)"
+fi
+# systemd-pstore may already have archived the records and cleared sysfs.
+if [[ -d /var/lib/systemd/pstore ]]; then
+  mkdir -p "$out/pstore/archive"
+  cp -a /var/lib/systemd/pstore/. "$out/pstore/archive/" 2>/dev/null ||
+    note "could not copy the systemd-pstore archive"
 fi
 
 # == debugfs: mount it if systemd did not ====================================
@@ -219,10 +225,16 @@ savefile usb/usb-devices.txt "$debugfs/usb/devices"
 # == miscellaneous ===========================================================
 savefile misc/modules.txt /proc/modules
 savefile misc/mem_sleep.txt /sys/power/mem_sleep
+savefile misc/panic.txt /proc/sys/kernel/panic
+savefile misc/panic_on_warn.txt /proc/sys/kernel/panic_on_warn
+savefile misc/panic_on_oops.txt /proc/sys/kernel/panic_on_oops
 save misc/kernel-log.txt dmesg
 save misc/kernel-log-errors.txt sh -c "dmesg --level=err,warn"
 if have journalctl; then
   save misc/journal-kernel.txt journalctl -b -k --no-pager -o short-monotonic
+  save misc/journal-kernel-previous.txt journalctl -b -1 -k --no-pager -o short-monotonic
+  save misc/journal-sensors.txt journalctl -b -u hexagonrpcd -u iio-sensor-proxy --no-pager -o short-monotonic
+  save misc/journal-sensors-previous.txt journalctl -b -1 -u hexagonrpcd -u iio-sensor-proxy --no-pager -o short-monotonic
 fi
 {
   for r in /sys/class/remoteproc/*; do

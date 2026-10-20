@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "xiaomi,nabu";
+
+	fragment@0 {
+		target-path = "/soc@0/remoteproc@2400000";
+
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+};

@@ -95,7 +95,8 @@ iio-sensor-proxy 的 SSC 后端直接使用这个库。
    轴变换仍交给 SEE 的设备配置，未照搬参考系统的 mount matrix。
 
 锁定的 nixpkgs 提供 `hexagonrpc 0.5.0`、`libssc 0.4.4` 和启用 SSC 的
-`iio-sensor-proxy 3.9`。需要临时停用时，设置 `nabu.sensors.enable = false`。
+`iio-sensor-proxy 3.9`。`nabu.sensors.enable = false` 只停用用户态服务；
+要同时阻止内核启动 SLPI，还需设置 `nabu.sensors.slpi.enable = false`。
 
 重建系统或镜像并启动后，可运行：
 
@@ -113,6 +114,37 @@ ssccli --sensor gyroscope --timeout 10
 当前没有自动修改 niri 输出变换；这里先提供传感器访问及桌面代理。
 如果应用硬性要求 `/dev/iio:deviceN`/`in_anglvel_*` ABI，则还需要独立的 SEE→IIO
 桥接工作；本方案不声称实现了这个接口。
+
+## 启动回归与隔离（2026-10-21）
+
+用户同时安装新内核和用户态后报告反复重启，更新前的系统代已被删除，正在恢复旧镜像。
+照片显示 7.2.6 的 `drm_crtc_wait_one_vblank()` 告警，调用来自 fbdev damage work。
+该位置在 [7.2.6 源码](https://github.com/gregkh/linux/blob/v7.2.6/drivers/gpu/drm/drm_vblank.c#L1309)
+中等待 1 秒后发出 WARN 并返回超时，照片未包含最终 panic 原因。
+目前不能断定 DRM、SLPI 启动或 FastRPC 附着中的哪一环触发了整机重启。
+
+[恢复模块](../../nixos/sensors-recovery.nix)增加了两个 systemd-boot 特化项：
+
+| 菜单项后缀 | 用户态 | SLPI 节点 |
+| --- | --- | --- |
+| `sensors-off` | 停用 | 通过 DT overlay 禁用 |
+| `sensors-userspace-off` | 停用 | 保持启用 |
+
+两个条目复用所选内核，均加 `panic=0` 以保留普通 panic 的现场。
+`sensors-off` 的 overlay 只改 SLPI 节点，保留 ADSP/CDSP/MPSS；不需要重新编译内核。
+这些条目需要安装包含恢复模块的系统/ESP 才会出现，不能恢复已经删除的旧系统代。
+已用 dtc/fdtoverlay 在两个内核的 DTB 上验证 SLPI 禁用，并检查 ADSP/CDSP 保持启用；
+配置求值也确认恢复项复用同一个内核 derivation。恢复项本身仍待真机启动验证。
+
+恢复后先保存 `/sys/fs/pstore/`、`/var/lib/systemd/pstore/` 和前一启动的 kernel journal。
+诊断脚本现会收集二者、前一启动的内核/传感器服务日志和 panic 策略。
+若重刷清除了这些记录，或复位没有留下 pstore，空日志不能排除崩溃。
+
+后续先试 `sensors-off`，再试 `sensors-userspace-off`，最后才启用完整传感器链路。
+若第二项失败而第一项可启动，优先调查 SLPI 启动；若只有完整链路失败，优先调查
+FastRPC 附着/SEE 请求及其内核路径。若第一项也失败，继续调查相同内核的其他启动路径。
+`panic=0` 不能阻止固件/硬件看门狗复位；临时 blacklist `qcom_q6v5_pas` 会同时停用
+多个 DSP，其结果只能作为较宽的隔离测试，不能单独证明 SLPI 是原因。
 
 ## 为什么不直接搬 Kumar-Jy 的全部改动
 

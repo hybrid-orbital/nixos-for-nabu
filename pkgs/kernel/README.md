@@ -74,6 +74,10 @@ the HexagonFS sensor data seed. `nixos/sensors.nix` enables hexagonrpcd,
 writable/persistent registry state and the SSC proxy, and installs libssc's
 gyro reader (`ssccli --sensor gyroscope`). Hardware validation is still pending. See the
 [sensor investigation and validation steps](../../docs/zh_CN/iio-sensors-investigation.md).
+An on-device 7.2.6 boot with both sensor changes now reportedly reboots; its
+photo shows a vblank WARN but not the final panic. The `sensors-off` and
+`sensors-userspace-off` boot specialisations isolate SLPI startup from userspace
+without rebuilding the kernel. The cause is still under investigation.
 
 `mainline-latest` inherits nixpkgs' DWARF and BTF configuration so BPF CO-RE
 programs can use `/sys/kernel/btf/vmlinux`. Its post-configure check requires
