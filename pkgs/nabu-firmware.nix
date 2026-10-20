@@ -38,8 +38,13 @@ stdenv.mkDerivation {
     cp -a a640_zap.mbn "$fw/qcom/sm8150/xiaomi/nabu/"
 
     # remoteproc / modem / video / wlan firmware
-    cp -a adsp.mbn cdsp.mbn modem* venus.mbn wlanmdsp.mbn \
+    cp -a adsp.mbn cdsp.mbn slpi_nb.mbn modem* venus.mbn wlanmdsp.mbn \
       "$fw/qcom/sm8150/xiaomi/nabu/"
+
+    # Sensor registry/config seed for hexagonrpcd. Its runtime tree must be
+    # copied to writable state; the DSP can update registry/calibration data.
+    mkdir -p "$out/share/qcom/sm8150/xiaomi/nabu"
+    cp -a hexagonfs/. "$out/share/qcom/sm8150/xiaomi/nabu/"
 
     # audio amplifiers (quad speakers)
     cp -a cs35l41* "$fw/cirrus/"

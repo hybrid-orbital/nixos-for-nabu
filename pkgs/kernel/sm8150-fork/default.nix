@@ -214,6 +214,18 @@ let
         patch = ./patches/0006-nabu-cs35l41-keep-default-dai-format.patch;
       }
       {
+        # SLPI owns the motion/light sensors. Its transport and memory are
+        # already described by the SoC/board; enable the board firmware.
+        name = "nabu-slpi";
+        patch = ./patches/0007-arm64-dts-qcom-enable-nabu-slpi.patch;
+      }
+      {
+        # Sensors PD messages must use the remote heap, even with a context
+        # bank. Backport the reviewed upstream fix instead of adding aliases.
+        name = "fastrpc-sensors-pd-remote-heap";
+        patch = ./patches/0008-misc-fastrpc-use-remote-heap-for-sensors-pd.patch;
+      }
+      {
         name = "nabu-defconfig";
         patch = defconfigPatch;
       }

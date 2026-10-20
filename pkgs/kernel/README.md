@@ -68,6 +68,13 @@ tracks upstream and is the kernel under test: it is expected to gain the
 remaining downstream drivers as they are rebased, and to eventually replace
 the fork once it is verified on hardware.
 
+Both kernels enable the nabu SLPI sensor DSP and carry the reviewed FastRPC
+sensors-PD remote-heap fix. `xiaomi-nabu-firmware` installs `slpi_nb.mbn` and
+the HexagonFS sensor data seed. This is the kernel/firmware bring-up step;
+hexagonrpcd, writable registry state and the SSC userspace service setup still
+need configuring and testing on the device. See the
+[sensor investigation and validation steps](../../docs/zh_CN/iio-sensors-investigation.md).
+
 `mainline-latest` inherits nixpkgs' DWARF and BTF configuration so BPF CO-RE
 programs can use `/sys/kernel/btf/vmlinux`. Its post-configure check requires
 `CONFIG_DEBUG_INFO_BTF=y`, module BTF, `BPF_SYSCALL` and `BPF_JIT`. This costs

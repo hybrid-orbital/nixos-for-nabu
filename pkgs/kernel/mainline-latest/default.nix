@@ -21,6 +21,8 @@
 #   0010  keep the speaker amplifiers on their default (I2S) DAI format: the
 #         machine driver forced DSP_A on the first codec of the link only,
 #         which silenced exactly that amplifier (cs35l41_br) on nabu
+#   0011  enable the SLPI sensor DSP with the nabu firmware
+#   0012  allocate sensors PD messages through the FastRPC remote heap
 #
 # The patches are a rebase of the sm8150-mainline tree (branch sm8150/6.17,
 # tag v6.17.0-sm8150) onto the version nixpkgs ships.  Keep them ordered: each
@@ -113,6 +115,16 @@ let
         # which also matches the AFE TDM port's long sync.
         name = "nabu-cs35l41-keep-default-dai-format";
         patch = ./patches/0010-nabu-cs35l41-keep-default-dai-format.patch;
+      }
+      {
+        name = "nabu-slpi";
+        patch = ./patches/0011-arm64-dts-qcom-enable-nabu-slpi.patch;
+      }
+      {
+        # Keep upstream's DMA address handling; only change the allocation
+        # path for sensors PD messages, as in the reviewed upstream fix.
+        name = "fastrpc-sensors-pd-remote-heap";
+        patch = ./patches/0012-misc-fastrpc-use-remote-heap-for-sensors-pd.patch;
       }
     ];
 

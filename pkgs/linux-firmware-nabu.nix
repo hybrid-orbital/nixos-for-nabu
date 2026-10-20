@@ -48,9 +48,9 @@
 #                             are symlinks into it)
 #   qcom/, except above       174 MiB: other SoCs — x1e80100 (37 MiB), kaanapali,
 #                             qdu100, sdm845, sm8250, sc8280xp, qcm2290, vpu, …
-#                             There is no sensor firmware in qcom/ at all:
-#                             Qualcomm sensors run inside the ADSP/SLPI, whose
-#                             firmware is adsp.mbn from xiaomi-nabu-firmware.
+#                             nabu's sensors run on the SLPI; slpi_nb.mbn and
+#                             its HexagonFS registry/config are provided by
+#                             xiaomi-nabu-firmware, separately from adsp.mbn.
 #                             nabu's own ADSP/CDSP/modem/GPU/zap blobs likewise
 #                             come from that package (priority 4 beats this one).
 #   nvidia/ amdgpu/ i915/     154/88/27 MiB: x86 GPUs and CPU microcode; external
