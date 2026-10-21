@@ -13,48 +13,47 @@ in
 {
   imports = [ ./sensors-recovery.nix ];
 
-  options.nabu.sensors.enable = lib.mkEnableOption "nabu SLPI sensors" // {
-    default = true;
+  options.nabu.sensors = {
+    enable = lib.mkEnableOption "experimental nabu SLPI sensor tools and file service";
+    autoStart = lib.mkEnableOption "start the verified sensor file service at boot";
+    proxy.enable = lib.mkEnableOption "SSC D-Bus proxy activation after hardware validation";
   };
 
   config = lib.mkIf cfg.enable {
     # Register the SSC-enabled package directly. The stock IIO module also
     # adds hid-sensor-hub to the initrd, which the fork does not build.
     environment.systemPackages = [
-      proxy
       pkgs.libssc
+      pkgs.qrtr
+      pkgs.hexagonrpc
+    ]
+    ++ lib.optional cfg.proxy.enable proxy;
+    services.dbus.packages = lib.optional cfg.proxy.enable proxy;
+    services.udev.packages = lib.optional cfg.proxy.enable proxy;
+    systemd.packages = lib.optional cfg.proxy.enable proxy;
+
+    assertions = [
+      {
+        assertion = !cfg.proxy.enable || cfg.autoStart;
+        message = "nabu.sensors.proxy.enable requires autoStart; first validate manual SSC sampling.";
+      }
     ];
-    services.dbus.packages = [ proxy ];
-    services.udev.packages = [ proxy ];
-    systemd.packages = [ proxy ];
 
     # Upstream only tags FastRPC for light/compass by default. nabu also
     # exposes its accelerometer through SSC; leave axis calibration to SEE.
-    services.udev.extraRules = ''
+    services.udev.extraRules = lib.mkIf cfg.proxy.enable ''
       SUBSYSTEM=="misc", KERNEL=="fastrpc-sdsp", ENV{IIO_SENSOR_PROXY_TYPE}+="ssc-accel"
     '';
 
     systemd.services.hexagonrpcd = {
       description = "Nabu SLPI sensor file service";
-      wantedBy = [ "multi-user.target" ];
-      # Upholds starts the proxy after readiness and brings it back after a
-      # failed attach/restart. BindsTo below stops stale proxy instances.
-      upholds = [ "iio-sensor-proxy.service" ];
-      before = [ "iio-sensor-proxy.service" ];
-      unitConfig.StartLimitIntervalSec = 0;
+      wantedBy = lib.optional cfg.autoStart "multi-user.target";
+      before = lib.optional cfg.proxy.enable "iio-sensor-proxy.service";
       path = [ pkgs.coreutils ];
       preStart = ''
         ${pkgs.bash}/bin/bash ${../scripts/nabu-sensors-seed.sh} \
           "$STATE_DIRECTORY" ${seed}
         test -c /dev/fastrpc-sdsp
-      '';
-      # Retry discovery without tearing down a healthy FastRPC attachment
-      # while the sensor firmware is still initializing its registry.
-      postStart = ''
-        until ${pkgs.libssc}/bin/ssccli --sensor accelerometer --timeout 1 &&
-              ${pkgs.libssc}/bin/ssccli --sensor light --timeout 1; do
-          sleep 2
-        done
       '';
       serviceConfig = {
         Type = "exec";
@@ -62,22 +61,19 @@ in
         StateDirectoryMode = "0700";
         UMask = "0077";
         ExecStart = "${pkgs.hexagonrpc}/bin/hexagonrpcd -f /dev/fastrpc-sdsp -d sdsp -s -R /var/lib/nabu-sensors/hexagonfs";
-        # Ordering includes ExecStartPost. No client can start this proxy
-        # while SEE still has no accelerometer/light sensor to enumerate.
-        TimeoutStartSec = "90s";
-        Restart = "always";
-        RestartSec = "5s";
+        # Type=exec confirms execve, not PD/SEE readiness. Keep sampling out
+        # of this service: --timeout in ssccli starts only after open_sync.
+        TimeoutStartSec = "30s";
+        Restart = "no";
       };
     };
 
-    systemd.services.iio-sensor-proxy = {
+    systemd.services.iio-sensor-proxy = lib.mkIf cfg.proxy.enable {
       bindsTo = [ "hexagonrpcd.service" ];
       after = [ "hexagonrpcd.service" ];
       partOf = [ "hexagonrpcd.service" ];
-      unitConfig.StartLimitIntervalSec = 0;
       serviceConfig = {
-        Restart = "on-failure";
-        RestartSec = "5s";
+        Restart = "no";
       };
     };
   };

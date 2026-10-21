@@ -18,7 +18,7 @@ in
 {
   options.nabu.sensors.slpi.enable = lib.mkOption {
     type = lib.types.bool;
-    default = true;
+    default = config.nabu.sensors.enable;
     description = ''
       Allow the sensor DSP to boot. When disabled, an overlay disables only
       the SLPI device-tree node without rebuilding the selected kernel.
@@ -38,6 +38,7 @@ in
       specialisation = {
         sensors-userspace-off.configuration = {
           nabu.sensors.enable = lib.mkForce false;
+          nabu.sensors.slpi.enable = lib.mkForce true;
           # Hold an ordinary kernel panic for inspection. A hardware or
           # firmware watchdog reset can still reboot the device.
           boot.kernelParams = [ "panic=0" ];
@@ -45,6 +46,13 @@ in
         sensors-off.configuration = {
           nabu.sensors.enable = lib.mkForce false;
           nabu.sensors.slpi.enable = lib.mkForce false;
+          boot.kernelParams = [ "panic=0" ];
+        };
+        sensors-lab.configuration = {
+          nabu.sensors.enable = lib.mkForce true;
+          nabu.sensors.slpi.enable = lib.mkForce true;
+          nabu.sensors.autoStart = lib.mkForce false;
+          nabu.sensors.proxy.enable = lib.mkForce false;
           boot.kernelParams = [ "panic=0" ];
         };
       };

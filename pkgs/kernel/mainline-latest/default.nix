@@ -121,6 +121,10 @@ let
         patch = ./patches/0011-arm64-dts-qcom-enable-nabu-slpi.patch;
       }
       {
+        name = "sm8150-slpi-pd-domains";
+        patch = ../patches/0001-soc-qcom-pd-mapper-add-sm8150-slpi-domains.patch;
+      }
+      {
         # Keep upstream's DMA address handling; only change the allocation
         # path for sensors PD messages, as in the reviewed upstream fix.
         name = "fastrpc-sensors-pd-remote-heap";

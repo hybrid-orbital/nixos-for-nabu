@@ -1,0 +1,32 @@
+Subject: [PATCH] soc: qcom: pd-mapper: advertise SM8150 SLPI domains
+
+The SM8150 table omits both SLPI domains even though the driver already
+defines them with instance 90. Enabling SLPI and the mapper does not make
+these domains discoverable without adding them to the table.
+
+Isolated from the nabu reference (no IOVA or DMA-coherency changes):
+https://github.com/Kumar-Jy/linux/blob/739161a890128f23bd1aa679d8754a9ea299269e/drivers/soc/qcom/qcom_pd_mapper.c
+
+Applies to v6.17.0-sm8150 and v7.2.6. This fixes domain discovery, not
+PD readiness, and cannot alone explain an AP panic without a crash log.
+
+diff --git a/drivers/soc/qcom/qcom_pd_mapper.c b/drivers/soc/qcom/qcom_pd_mapper.c
+--- a/drivers/soc/qcom/qcom_pd_mapper.c
++++ b/drivers/soc/qcom/qcom_pd_mapper.c
+@@ -533,14 +533,16 @@
+ 
+ static const struct qcom_pdm_domain_data *sm8150_domains[] = {
+ 	&adsp_audio_pd,
+ 	&adsp_root_pd,
+ 	&cdsp_root_pd,
+ 	&mpss_root_pd_gps,
+ 	&mpss_wlan_pd,
++	&slpi_root_pd,
++	&slpi_sensor_pd,
+ 	NULL,
+ };
+ 
+ static const struct qcom_pdm_domain_data *sm8250_domains[] = {
+ 	&adsp_audio_pd,
+ 	&adsp_root_pd,
+ 	&cdsp_root_pd,

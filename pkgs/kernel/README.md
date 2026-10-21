@@ -68,16 +68,15 @@ tracks upstream and is the kernel under test: it is expected to gain the
 remaining downstream drivers as they are rebased, and to eventually replace
 the fork once it is verified on hardware.
 
-Both kernels enable the nabu SLPI sensor DSP and carry the reviewed FastRPC
-sensors-PD remote-heap fix. `xiaomi-nabu-firmware` installs `slpi_nb.mbn` and
-the HexagonFS sensor data seed. `nixos/sensors.nix` enables hexagonrpcd,
-writable/persistent registry state and the SSC proxy, and installs libssc's
-gyro reader (`ssccli --sensor gyroscope`). Hardware validation is still pending. See the
-[sensor investigation and validation steps](../../docs/zh_CN/iio-sensors-investigation.md).
-An on-device 7.2.6 boot with both sensor changes now reportedly reboots; its
-photo shows a vblank WARN but not the final panic. The `sensors-off` and
-`sensors-userspace-off` boot specialisations isolate SLPI startup from userspace
-without rebuilding the kernel. The cause is still under investigation.
+Both kernels carry the SLPI DT enablement, the reviewed FastRPC message-buffer
+fix, and the SM8150 PD mapper domain-table correction. NixOS disables SLPI
+with an overlay in the default boot: sensor support remains experimental.
+`sensors-userspace-off` tests SLPI alone; `sensors-lab` installs the manual
+file service and SSC tools without proxy activation or attachment retries.
+All isolation entries share one kernel. See the
+[source audit and staged validation](../../docs/zh_CN/iio-sensors-followup.md).
+For incremental builds against existing matching kernel build artifacts, use
+`scripts/build-sensor-modules.sh`; it compiles only FastRPC and PD mapper.
 
 `mainline-latest` inherits nixpkgs' DWARF and BTF configuration so BPF CO-RE
 programs can use `/sys/kernel/btf/vmlinux`. Its post-configure check requires

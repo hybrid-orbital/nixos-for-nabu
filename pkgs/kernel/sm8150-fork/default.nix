@@ -220,6 +220,10 @@ let
         patch = ./patches/0007-arm64-dts-qcom-enable-nabu-slpi.patch;
       }
       {
+        name = "sm8150-slpi-pd-domains";
+        patch = ../patches/0001-soc-qcom-pd-mapper-add-sm8150-slpi-domains.patch;
+      }
+      {
         # Sensors PD messages must use the remote heap, even with a context
         # bank. Backport the reviewed upstream fix instead of adding aliases.
         name = "fastrpc-sensors-pd-remote-heap";

@@ -48,6 +48,11 @@
     in
     {
       checks = lib.genAttrs [ "x86_64-linux" "aarch64-linux" ] (system: {
+        sensors-policy = import ./tests/sensors-policy.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+          inherit lib;
+          configuration = self.nixosConfigurations.ext4-nabu;
+        };
         sensors-state = import ./tests/sensors-state.nix {
           pkgs = nixpkgs.legacyPackages.${system};
         };
