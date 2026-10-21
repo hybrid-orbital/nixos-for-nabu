@@ -1,0 +1,21 @@
+Subject: [PATCH] dt-bindings: misc: fastrpc: describe nabu attach protection domain
+
+diff --git a/Documentation/devicetree/bindings/misc/qcom,fastrpc.yaml b/Documentation/devicetree/bindings/misc/qcom,fastrpc.yaml
+--- a/Documentation/devicetree/bindings/misc/qcom,fastrpc.yaml
++++ b/Documentation/devicetree/bindings/misc/qcom,fastrpc.yaml
+@@ -40,6 +40,15 @@
+     $ref: /schemas/types.yaml#/definitions/string-array
+     items:
+       - const: fastrpcglink-apps-dsp
++
++  qcom,protection-domain:
++    description:
++      Service registry name and protection domain that must be UP before
++      attaching to the sensors process on Xiaomi nabu.
++    $ref: /schemas/types.yaml#/definitions/string-array
++    items:
++      - const: tms/servreg
++      - const: msm/slpi/root_pd
+ 
+   qcom,non-secure-domain:
+     description:

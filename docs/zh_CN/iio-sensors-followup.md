@@ -1,5 +1,9 @@
 # 传感器启动回归：源码复查与下一轮验证
 
+> 更新：本轮 lab 的手动 attach 已复现卡死；当前实现改用
+> [context-bank alias 实验版本](iio-sensors-alias-candidate.md)。下文保留当时的分析，
+> remote-heap 补丁已撤换；分阶段启动及日志采集步骤仍适用。
+
 2026-10-21。设备已恢复到 `e7b3cc4b7b59a4b9a72adfb8bbdbd0b55927d2c9`。
 本报告取代[初版调查](iio-sensors-investigation.md)的默认启用和自动重试策略。
 基线仍为 `v6.17.0-sm8150`、锁定 nixpkgs 的 Linux 7.2.6、hexagonrpc 0.5.0、libssc 0.4.4。
@@ -46,7 +50,7 @@ slpi_sensor_pd /* msm/slpi/sensor_pd, instance_id = 90 */
 `reg=1` 是 FastRPC session selector；SMMU stream ID `0x5a1` 是另一个值。
 DSP 若没有按该 ABI 拆分地址，就可能访问未映射的高 IOVA。
 
-保留的[一行修复](../../pkgs/kernel/mainline-latest/patches/0012-misc-fastrpc-use-remote-heap-for-sensors-pd.patch)
+保留的[一行修复](https://lists.openwall.net/linux-kernel/2026/10/03/762)
 让 sensors PD 的 **RPC 消息缓冲区** 经 `fastrpc_remote_heap_alloc()` 分配。
 该函数实际选择 RPMsg 父设备，而非 context-bank device；“remote heap”这个函数名
 不保证已有一个独立、正确配置的 reserved-memory 池。nabu 的 FastRPC 子节点没有

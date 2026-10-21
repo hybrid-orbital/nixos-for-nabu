@@ -21,8 +21,8 @@
 #   0010  keep the speaker amplifiers on their default (I2S) DAI format: the
 #         machine driver forced DSP_A on the first codec of the link only,
 #         which silenced exactly that amplifier (cs35l41_br) on nabu
-#   0011  enable the SLPI sensor DSP with the nabu firmware
-#   0012  allocate sensors PD messages through the FastRPC remote heap
+#   0011  configure nabu SLPI firmware, context banks and protection domain
+#   0012  nabu SDSP context-bank aliases, DMA lifecycle and PDR readiness
 #
 # The patches are a rebase of the sm8150-mainline tree (branch sm8150/6.17,
 # tag v6.17.0-sm8150) onto the version nixpkgs ships.  Keep them ordered: each
@@ -121,14 +121,17 @@ let
         patch = ./patches/0011-arm64-dts-qcom-enable-nabu-slpi.patch;
       }
       {
+        name = "nabu-fastrpc-pdr-binding";
+        patch = ../patches/0002-dt-bindings-fastrpc-nabu-protection-domain.patch;
+      }
+      {
         name = "sm8150-slpi-pd-domains";
         patch = ../patches/0001-soc-qcom-pd-mapper-add-sm8150-slpi-domains.patch;
       }
       {
-        # Keep upstream's DMA address handling; only change the allocation
-        # path for sensors PD messages, as in the reviewed upstream fix.
-        name = "fastrpc-sensors-pd-remote-heap";
-        patch = ./patches/0012-misc-fastrpc-use-remote-heap-for-sensors-pd.patch;
+        # Use the nabu-only context-bank alias ABI and PDR readiness gate.
+        name = "fastrpc-nabu-sdsp-mappings";
+        patch = ./patches/0012-misc-fastrpc-nabu-sdsp-mappings.patch;
       }
     ];
 

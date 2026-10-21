@@ -220,14 +220,17 @@ let
         patch = ./patches/0007-arm64-dts-qcom-enable-nabu-slpi.patch;
       }
       {
+        name = "nabu-fastrpc-pdr-binding";
+        patch = ../patches/0002-dt-bindings-fastrpc-nabu-protection-domain.patch;
+      }
+      {
         name = "sm8150-slpi-pd-domains";
         patch = ../patches/0001-soc-qcom-pd-mapper-add-sm8150-slpi-domains.patch;
       }
       {
-        # Sensors PD messages must use the remote heap, even with a context
-        # bank. Backport the reviewed upstream fix instead of adding aliases.
-        name = "fastrpc-sensors-pd-remote-heap";
-        patch = ./patches/0008-misc-fastrpc-use-remote-heap-for-sensors-pd.patch;
+        # Use the nabu-only context-bank alias ABI and PDR readiness gate.
+        name = "fastrpc-nabu-sdsp-mappings";
+        patch = ./patches/0008-misc-fastrpc-nabu-sdsp-mappings.patch;
       }
       {
         name = "nabu-defconfig";

@@ -68,13 +68,14 @@ tracks upstream and is the kernel under test: it is expected to gain the
 remaining downstream drivers as they are rebased, and to eventually replace
 the fork once it is verified on hardware.
 
-Both kernels carry the SLPI DT enablement, the reviewed FastRPC message-buffer
-fix, and the SM8150 PD mapper domain-table correction. NixOS disables SLPI
+Both kernels carry the nabu SLPI context-bank DT setup, a nabu-only FastRPC
+high-IOVA alias implementation with PDR readiness gating, and the SM8150 PD
+mapper domain-table correction. This replaces the remote-heap message workaround. NixOS disables SLPI
 with an overlay in the default boot: sensor support remains experimental.
 `sensors-userspace-off` tests SLPI alone; `sensors-lab` installs the manual
 file service and SSC tools without proxy activation or attachment retries.
 All isolation entries share one kernel. See the
-[source audit and staged validation](../../docs/zh_CN/iio-sensors-followup.md).
+[alias candidate and validation limits](../../docs/zh_CN/iio-sensors-alias-candidate.md).
 For incremental builds against existing matching kernel build artifacts, use
 `scripts/build-sensor-modules.sh`; it compiles only FastRPC and PD mapper.
 

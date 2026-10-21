@@ -12,8 +12,8 @@ if [[ $# != 4 ]]; then
   exit 2
 fi
 case $1 in
-  sm8150-fork) rpc_patch=0008-misc-fastrpc-use-remote-heap-for-sensors-pd.patch ;;
-  mainline-latest) rpc_patch=0012-misc-fastrpc-use-remote-heap-for-sensors-pd.patch ;;
+  sm8150-fork) rpc_patch=0008-misc-fastrpc-nabu-sdsp-mappings.patch ;;
+  mainline-latest) rpc_patch=0012-misc-fastrpc-nabu-sdsp-mappings.patch ;;
   *) echo "unknown kernel: $1" >&2; exit 2 ;;
 esac
 src=$(realpath -e "$2")
@@ -22,14 +22,14 @@ output=$(realpath -m "$4")
 for f in .config Module.symvers include/config/kernel.release; do
   test -s "$build/$f" || { echo "missing prepared build file: $build/$f" >&2; exit 1; }
 done
-for cfg in CONFIG_ARM64=y CONFIG_QCOM_FASTRPC=m CONFIG_QCOM_PD_MAPPER=m; do
+for cfg in CONFIG_ARM64=y CONFIG_QCOM_FASTRPC=m CONFIG_QCOM_PD_MAPPER=m CONFIG_QCOM_PDR_HELPERS=m; do
   grep -qx "$cfg" "$build/.config" || { echo "required: $cfg" >&2; exit 1; }
 done
 # mkdir fails on an existing output, so neither source nor previous results
 # can be overwritten. Keep the work tree for inspecting compiler failures.
 mkdir "$output"
 mkdir -p "$output/work/drivers/misc" "$output/work/drivers/soc/qcom"
-cp "$src/drivers/misc/fastrpc.c" "$output/work/drivers/misc/"
+cp "$src/drivers/misc/"{fastrpc.c,Kconfig} "$output/work/drivers/misc/"
 cp "$src/drivers/soc/qcom/"{qcom_pd_mapper.c,pdr_internal.h} "$output/work/drivers/soc/qcom/"
 cd "$output/work"
 for p in \

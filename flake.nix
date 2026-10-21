@@ -48,6 +48,9 @@
     in
     {
       checks = lib.genAttrs [ "x86_64-linux" "aarch64-linux" ] (system: {
+        fastrpc-alias = import ./tests/fastrpc-alias.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+        };
         sensors-policy = import ./tests/sensors-policy.nix {
           pkgs = nixpkgs.legacyPackages.${system};
           inherit lib;

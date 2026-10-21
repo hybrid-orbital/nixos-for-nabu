@@ -1,0 +1,491 @@
+Subject: [PATCH] misc: fastrpc: isolate nabu SDSP mappings and wait for its PD
+
+Experimental nabu-only replacement for the sensors remote-heap workaround.
+Based on the alias and PDR approach in Kumar-Jy/linux at
+739161a890128f23bd1aa679d8754a9ea299269e, with DMA handles kept separate,
+range validation, import coverage and error-path unwinding. Preserve other
+SoCs' SID encoding and DMA masks. No unverified physical carveout is used.
+Physical remote-heap and secure imports are unsupported on this board;
+hexagonrpcd's apps_mem uses ADD_PAGES instead. Requires matching nabu DT.
+
+diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
+--- a/drivers/misc/fastrpc.c
++++ b/drivers/misc/fastrpc.c
+@@ -6,6 +6,11 @@
+ #include <linux/device.h>
+ #include <linux/dma-buf.h>
+ #include <linux/dma-mapping.h>
++#include <linux/dma-map-ops.h>
++#include <linux/iommu.h>
++#include <linux/overflow.h>
++#include <linux/wait.h>
++#include <linux/soc/qcom/pdr.h>
+ #include <linux/dma-resv.h>
+ #include <linux/idr.h>
+ #include <linux/list.h>
+@@ -189,11 +194,19 @@
+ 	u64 offset;
+ };
+ 
++struct fastrpc_alias {
++	struct iommu_domain *domain;
++	dma_addr_t iova;
++	size_t size;
++};
++
+ struct fastrpc_buf {
+ 	struct fastrpc_user *fl;
+ 	struct dma_buf *dmabuf;
+ 	struct device *dev;
+ 	void *virt;
++	dma_addr_t dma_handle;
++	struct fastrpc_alias alias;
+ 	dma_addr_t dma_addr;
+ 	u64 size;
+ 	/* Lock for dma buf attachments */
+@@ -217,6 +230,7 @@
+ 	struct dma_buf *buf;
+ 	struct sg_table *table;
+ 	struct dma_buf_attachment *attach;
++	struct fastrpc_alias alias;
+ 	dma_addr_t dma_addr;
+ 	u64 size;
+ 	void *va;
+@@ -264,6 +278,11 @@
+ };
+ 
+ struct fastrpc_channel_ctx {
++	bool nabu_sdsp;
++	bool attach_pd_up;
++	bool removing;
++	struct pdr_handle *attach_pdr;
++	wait_queue_head_t attach_pd_wait;
+ 	int domain_id;
+ 	int sesscount;
+ 	int vmcount;
+@@ -294,6 +313,7 @@
+ };
+ 
+ struct fastrpc_user {
++	bool sensors_attached;
+ 	struct list_head user;
+ 	struct list_head maps;
+ 	struct list_head pending;
+@@ -314,14 +334,6 @@
+ 	struct kref refcount;
+ };
+ 
+-/* Extract SMMU PA from consolidated IOVA */
+-static inline dma_addr_t fastrpc_ipa_to_dma_addr(struct fastrpc_channel_ctx *cctx, dma_addr_t iova)
+-{
+-	if (!cctx->soc_data->sid_pos)
+-		return 0;
+-	return iova & GENMASK_ULL(cctx->soc_data->sid_pos - 1, 0);
+-}
+-
+ /*
+  * Prepare the consolidated iova to send to DSP by prepending the SID
+  * to smmu PA at the appropriate position
+@@ -330,6 +342,70 @@
+ 				     struct fastrpc_session_ctx *sctx)
+ {
+ 	return (u64)sctx->sid << cctx->soc_data->sid_pos;
++}
++
++/* The nabu firmware consumes the session-tagged address as an IOVA.
++ * Keep DMA-API allocations below 4 GiB and mirror them above that range.
++ * Never pass the tagged address back to the DMA API.
++ */
++static void fastrpc_alias_unmap(struct fastrpc_alias *alias)
++{
++	if (alias->size) {
++		WARN_ON(iommu_unmap(alias->domain, alias->iova, alias->size) != alias->size);
++		alias->size = 0;
++	}
++}
++
++static int fastrpc_alias_map(struct device *dev, dma_addr_t dma, u64 size,
++			     u64 offset, struct fastrpc_alias *alias)
++{
++	struct iommu_domain *domain = iommu_get_domain_for_dev(dev);
++	u64 bytes, start, end;
++	size_t done;
++	unsigned int prot = IOMMU_READ | IOMMU_WRITE;
++	int ret;
++
++	/* This private alias range must never overlap DMA-API allocations. */
++	if (!domain || !iommu_is_dma_domain(domain) ||
++	    dma_get_mask(dev) > DMA_BIT_MASK(32) ||
++	    !(domain->pgsize_bitmap & PAGE_SIZE))
++		return -EOPNOTSUPP;
++	if (!size || size > DMA_BIT_MASK(32) || !IS_ALIGNED(dma, PAGE_SIZE) ||
++	    !offset || !IS_ALIGNED(offset, BIT_ULL(32)))
++		return -EINVAL;
++	bytes = PAGE_ALIGN(size);
++	if (dma + bytes > BIT_ULL(32) || check_add_overflow((u64)dma, offset, &start) ||
++	    check_add_overflow(start, bytes - 1, &end))
++		return -EOVERFLOW;
++	if (domain->geometry.force_aperture &&
++	    (start < domain->geometry.aperture_start || end > domain->geometry.aperture_end))
++		return -ERANGE;
++	if (dev_is_dma_coherent(dev))
++		prot |= IOMMU_CACHE;
++
++	alias->domain = domain;
++	alias->iova = start;
++	for (done = 0; done < bytes; done += PAGE_SIZE) {
++		phys_addr_t phys = iommu_iova_to_phys(domain, dma + done);
++
++		if (!phys || !IS_ALIGNED(phys, PAGE_SIZE)) {
++			ret = -EFAULT;
++			goto rollback;
++		}
++		if (iommu_iova_to_phys(domain, start + done)) {
++			ret = -EEXIST;
++			goto rollback;
++		}
++		ret = iommu_map(domain, start + done, phys, PAGE_SIZE, prot, GFP_KERNEL);
++		if (ret)
++			goto rollback;
++		alias->size += PAGE_SIZE;
++	}
++	return 0;
++
++rollback:
++	fastrpc_alias_unmap(alias);
++	return ret;
+ }
+ 
+ static void fastrpc_free_map(struct kref *ref)
+@@ -356,6 +432,7 @@
+ 				return;
+ 			}
+ 		}
++		fastrpc_alias_unmap(&map->alias);
+ 		dma_buf_unmap_attachment_unlocked(map->attach, map->table,
+ 						  DMA_BIDIRECTIONAL);
+ 		dma_buf_detach(map->buf, map->attach);
+@@ -422,8 +499,9 @@
+ 
+ static void fastrpc_buf_free(struct fastrpc_buf *buf)
+ {
++	fastrpc_alias_unmap(&buf->alias);
+ 	dma_free_coherent(buf->dev, buf->size, buf->virt,
+-			  fastrpc_ipa_to_dma_addr(buf->fl->cctx, buf->dma_addr));
++			  buf->dma_handle);
+ 	kfree(buf);
+ }
+ 
+@@ -447,7 +525,7 @@
+ 	buf->dev = dev;
+ 	buf->raddr = 0;
+ 
+-	buf->virt = dma_alloc_coherent(dev, buf->size, &buf->dma_addr,
++	buf->virt = dma_alloc_coherent(dev, buf->size, &buf->dma_handle,
+ 				       GFP_KERNEL);
+ 	if (!buf->virt) {
+ 		mutex_destroy(&buf->lock);
+@@ -455,6 +533,7 @@
+ 		return -ENOMEM;
+ 	}
+ 
++	buf->dma_addr = buf->dma_handle;
+ 	*obuf = buf;
+ 
+ 	return 0;
+@@ -472,8 +551,18 @@
+ 
+ 	buf = *obuf;
+ 
+-	if (fl->sctx && fl->sctx->sid)
++	if (fl->sctx && fl->sctx->sid) {
++		if (fl->cctx->nabu_sdsp) {
++			ret = fastrpc_alias_map(dev, buf->dma_handle, size,
++						fastrpc_sid_offset(fl->cctx, fl->sctx), &buf->alias);
++			if (ret) {
++				fastrpc_buf_free(buf);
++				*obuf = NULL;
++				return ret;
++			}
++		}
+ 		buf->dma_addr += fastrpc_sid_offset(fl->cctx, fl->sctx);
++	}
+ 
+ 	return 0;
+ }
+@@ -483,6 +572,11 @@
+ {
+ 	struct device *rdev = &fl->cctx->rpdev->dev;
+ 
++	/* nabu has no separately assigned physical remote heap. Do not silently
++	 * hand arbitrary AP memory to firmware for physical-heap requests.
++	 */
++	if (fl->cctx->nabu_sdsp)
++		return -EOPNOTSUPP;
+ 	return  __fastrpc_buf_alloc(fl, rdev, size, obuf);
+ }
+ 
+@@ -764,7 +858,7 @@
+ 		return -ENOMEM;
+ 
+ 	ret = dma_get_sgtable(buffer->dev, &a->sgt, buffer->virt,
+-			      fastrpc_ipa_to_dma_addr(buffer->fl->cctx, buffer->dma_addr),
++			      buffer->dma_handle,
+ 			      buffer->size);
+ 	if (ret < 0) {
+ 		dev_err(buffer->dev, "failed to get scatterlist from DMA API\n");
+@@ -814,7 +908,7 @@
+ 	dma_resv_assert_held(dmabuf->resv);
+ 
+ 	return dma_mmap_coherent(buf->dev, vma, buf->virt,
+-				 fastrpc_ipa_to_dma_addr(buf->fl->cctx, buf->dma_addr), size);
++				 buf->dma_handle, size);
+ }
+ 
+ static const struct dma_buf_ops fastrpc_dma_buf_ops = {
+@@ -847,6 +941,11 @@
+ 
+ 	INIT_LIST_HEAD(&map->node);
+ 	kref_init(&map->refcount);
++
++	if (fl->cctx->nabu_sdsp && (attr & FASTRPC_ATTR_SECUREMAP)) {
++		kfree(map);
++		return -EOPNOTSUPP;
++	}
+ 
+ 	map->fl = fl;
+ 	map->fd = fd;
+@@ -883,6 +982,28 @@
+ 		err = -EINVAL;
+ 		goto map_err;
+ 	}
++	if (fl->cctx->nabu_sdsp) {
++		struct scatterlist *sg;
++		dma_addr_t base = sg_dma_address(table->sgl);
++		u64 total = 0;
++		unsigned int i;
++
++		for_each_sg(table->sgl, sg, table->nents, i) {
++			if (sg_dma_address(sg) != base + total ||
++			    check_add_overflow(total, (u64)sg_dma_len(sg), &total)) {
++				err = -EINVAL;
++				goto map_err;
++			}
++		}
++		if (len > total) {
++			err = -EINVAL;
++			goto map_err;
++		}
++		err = fastrpc_alias_map(sess->dev, base, total,
++					fastrpc_sid_offset(fl->cctx, fl->sctx), &map->alias);
++		if (err)
++			goto map_err;
++	}
+ 	map->va = sg_virt(map->table->sgl);
+ 	map->len = len;
+ 
+@@ -915,11 +1036,14 @@
+ 	return 0;
+ 
+ map_err:
++	fastrpc_alias_unmap(&map->alias);
++	if (map->table)
++		dma_buf_unmap_attachment_unlocked(map->attach, map->table, DMA_BIDIRECTIONAL);
+ 	dma_buf_detach(map->buf, map->attach);
+ attach_err:
+ 	dma_buf_put(map->buf);
+ get_err:
+-	fastrpc_map_put(map);
++	kfree(map);
+ 
+ 	return err;
+ }
+@@ -1254,6 +1378,11 @@
+ 	if (!fl->cctx->rpdev)
+ 		return -EPIPE;
+ 
++	/* PDR DOWN is not necessarily accompanied by RPMsg removal. */
++	if (fl->cctx->nabu_sdsp &&
++	    (!READ_ONCE(fl->cctx->attach_pd_up) || READ_ONCE(fl->cctx->removing)))
++		return -EPIPE;
++
+ 	if (handle == FASTRPC_INIT_HANDLE && !kernel) {
+ 		dev_warn_ratelimited(fl->sctx->dev, "user app trying to send a kernel RPC message (%d)\n",  handle);
+ 		return -EPERM;
+@@ -1630,7 +1759,10 @@
+ 	struct fastrpc_channel_ctx *cctx = fl->cctx;
+ 	unsigned long flags;
+ 
+-	fastrpc_release_current_dsp_process(fl);
++	if (!cctx->nabu_sdsp ||
++	    (fl->sensors_attached && READ_ONCE(cctx->attach_pd_up) &&
++	     !READ_ONCE(cctx->removing)))
++		fastrpc_release_current_dsp_process(fl);
+ 
+ 	spin_lock_irqsave(&cctx->lock, flags);
+ 	list_del(&fl->user);
+@@ -1733,7 +1865,21 @@
+ {
+ 	struct fastrpc_invoke_args args[1];
+ 	int client_id = fl->client_id;
++	long ready;
++	int ret;
+ 	u32 sc;
++
++	if (pd == SENSORS_PD && fl->cctx->nabu_sdsp) {
++		ready = wait_event_interruptible_timeout(fl->cctx->attach_pd_wait,
++			READ_ONCE(fl->cctx->attach_pd_up) || READ_ONCE(fl->cctx->removing),
++			15 * HZ);
++		if (ready < 0)
++			return ready;
++		if (READ_ONCE(fl->cctx->removing))
++			return -EPIPE;
++		if (!ready)
++			return -ETIMEDOUT;
++	}
+ 
+ 	args[0].ptr = (u64)(uintptr_t) &client_id;
+ 	args[0].length = sizeof(client_id);
+@@ -1741,8 +1887,11 @@
+ 	sc = FASTRPC_SCALARS(FASTRPC_RMID_INIT_ATTACH, 1, 0);
+ 	fl->pd = pd;
+ 
+-	return fastrpc_internal_invoke(fl, true, FASTRPC_INIT_HANDLE,
++	ret = fastrpc_internal_invoke(fl, true, FASTRPC_INIT_HANDLE,
+ 				       sc, &args[0]);
++	if (!ret && pd == SENSORS_PD)
++		fl->sensors_attached = true;
++	return ret;
+ }
+ 
+ static int fastrpc_invoke(struct fastrpc_user *fl, char __user *argp)
+@@ -2267,7 +2416,10 @@
+ 		}
+ 	}
+ 	spin_unlock_irqrestore(&cctx->lock, flags);
+-	rc = dma_set_mask(dev, DMA_BIT_MASK(dma_bits));
++	if (cctx->nabu_sdsp)
++		rc = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
++	else
++		rc = dma_set_mask(dev, DMA_BIT_MASK(dma_bits));
+ 	if (rc) {
+ 		dev_err(dev, "%u-bit DMA enable failed\n", dma_bits);
+ 		return rc;
+@@ -2366,6 +2518,62 @@
+ 	.dma_addr_bits_default = 32,
+ };
+ 
++#if IS_REACHABLE(CONFIG_QCOM_PDR_HELPERS)
++static void fastrpc_attach_pd_status(int state, char *path, void *priv)
++{
++	struct fastrpc_channel_ctx *cctx = priv;
++
++	WRITE_ONCE(cctx->attach_pd_up, state == SERVREG_SERVICE_STATE_UP);
++	wake_up_all(&cctx->attach_pd_wait);
++}
++
++static int fastrpc_attach_pdr_init(struct fastrpc_channel_ctx *cctx,
++				 struct device_node *node)
++{
++	struct pdr_service *service;
++	const char *name, *path;
++	int ret;
++
++	if (!cctx->nabu_sdsp)
++		return 0;
++	ret = of_property_read_string_index(node, "qcom,protection-domain", 0, &name);
++	if (ret)
++		return ret;
++	ret = of_property_read_string_index(node, "qcom,protection-domain", 1, &path);
++	if (ret)
++		return ret;
++	cctx->attach_pdr = pdr_handle_alloc(fastrpc_attach_pd_status, cctx);
++	if (IS_ERR(cctx->attach_pdr)) {
++		ret = PTR_ERR(cctx->attach_pdr);
++		cctx->attach_pdr = NULL;
++		return ret;
++	}
++	service = pdr_add_lookup(cctx->attach_pdr, name, path);
++	if (IS_ERR(service)) {
++		ret = PTR_ERR(service);
++		pdr_handle_release(cctx->attach_pdr);
++		cctx->attach_pdr = NULL;
++		return ret;
++	}
++	return 0;
++}
++
++static void fastrpc_attach_pdr_release(struct fastrpc_channel_ctx *cctx)
++{
++	if (cctx->attach_pdr)
++		pdr_handle_release(cctx->attach_pdr);
++	cctx->attach_pdr = NULL;
++}
++#else
++static int fastrpc_attach_pdr_init(struct fastrpc_channel_ctx *cctx,
++				 struct device_node *node)
++{
++	return cctx->nabu_sdsp ? -EOPNOTSUPP : 0;
++}
++
++static void fastrpc_attach_pdr_release(struct fastrpc_channel_ctx *cctx) {}
++#endif
++
+ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
+ {
+ 	struct device *rdev = &rpdev->dev;
+@@ -2431,6 +2639,9 @@
+ 
+ 	secure_dsp = !(of_property_read_bool(rdev->of_node, "qcom,non-secure-domain"));
+ 	data->secure = secure_dsp;
++	data->nabu_sdsp = domain_id == SDSP_DOMAIN_ID &&
++			 of_machine_is_compatible("xiaomi,nabu");
++	init_waitqueue_head(&data->attach_pd_wait);
+ 	data->soc_data = soc_data;
+ 
+ 	switch (domain_id) {
+@@ -2472,6 +2683,10 @@
+ 	data->rpdev = rpdev;
+ 	dev_set_drvdata(&rpdev->dev, data);
+ 
++	err = fastrpc_attach_pdr_init(data, rdev->of_node);
++	if (err)
++		goto err_deregister_fdev;
++
+ 	err = of_platform_populate(rdev->of_node, NULL, NULL, rdev);
+ 	if (err)
+ 		goto err_deregister_fdev;
+@@ -2485,6 +2700,7 @@
+ 		misc_deregister(&data->secure_fdevice->miscdev);
+ 
+ err_free_data:
++	fastrpc_attach_pdr_release(data);
+ 	kfree(data);
+ 	return err;
+ }
+@@ -2510,10 +2726,14 @@
+ 
+ 	/* No invocations past this point */
+ 	spin_lock_irqsave(&cctx->lock, flags);
++	WRITE_ONCE(cctx->removing, true);
+ 	cctx->rpdev = NULL;
+ 	list_for_each_entry(user, &cctx->users, user)
+ 		fastrpc_notify_users(user);
+ 	spin_unlock_irqrestore(&cctx->lock, flags);
++
++	wake_up_all(&cctx->attach_pd_wait);
++	fastrpc_attach_pdr_release(cctx);
+ 
+ 	if (cctx->fdevice)
+ 		misc_deregister(&cctx->fdevice->miscdev);
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -304,6 +304,7 @@
+ 	depends on RPMSG
+ 	select DMA_SHARED_BUFFER
+ 	select QCOM_SCM
++	select QCOM_PDR_HELPERS if NET && QRTR
+ 	help
+ 	  Provides a communication mechanism that allows for clients to
+ 	  make remote method invocations across processor boundary to
