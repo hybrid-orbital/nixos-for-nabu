@@ -48,6 +48,9 @@
     in
     {
       checks = lib.genAttrs [ "x86_64-linux" "aarch64-linux" ] (system: {
+        libssc-task-errors = import ./tests/libssc-task-errors.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+        };
         fastrpc-alias = import ./tests/fastrpc-alias.nix {
           pkgs = nixpkgs.legacyPackages.${system};
         };

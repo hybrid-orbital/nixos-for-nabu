@@ -1,0 +1,31 @@
+Subject: [PATCH] sensor: log open/close errors before transferring ownership
+
+GTask takes ownership of the error and can complete the callback before
+return_error returns. Logging error->message afterwards is a use-after-free,
+seen when an SSC request fails after an SLPI restart. Move both debug messages
+before the ownership transfer; preserve the original error for the caller.
+
+--- a/src/libssc-sensor.c
++++ b/src/libssc-sensor.c
+@@ -106,9 +106,9 @@
+ 	GError *error = NULL;
+ 
+ 	if (!ssc_client_send_finish (self, result, &error)) {
++		g_debug ("Sensor disable request failed: %s", error->message);
+ 		g_task_return_error (task, error);
+ 		g_clear_object (&task);
+-		g_debug ("Sensor disable request failed: %s", error->message);
+ 		return;
+ 	}
+ 
+@@ -168,9 +168,9 @@
+ 	GError *error = NULL;
+ 
+ 	if (!ssc_client_send_finish (self, result, &error)) {
++		g_debug ("Sensor enable request failed: %s", error->message);
+ 		g_task_return_error (task, error);
+ 		g_clear_object (&task);
+-		g_debug ("Sensor enable request failed: %s", error->message);
+ 		return;
+ 	}
+ 

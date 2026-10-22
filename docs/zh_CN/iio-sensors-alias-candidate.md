@@ -1,5 +1,8 @@
 # nabu SDSP：context-bank alias 实验版本
 
+> 唤醒后的 libssc 崩溃修复、设备重建恢复及内核 TODO 见
+> [后续报告](iio-sensors-resume.md)。
+
 2026-10-22。接续 `2f10562` 的真机结果：Linux 7.2.6 下四个 remoteproc
 均为 running，进入 sensors-lab 正常；手动启动 hexagonrpcd 后立即卡死，约十秒重启。
 本次直接实现可测试的替代方案，不把它描述成已经验证的根因修复。

@@ -9,6 +9,7 @@ let
   cfg = config.nabu.sensors;
   proxy = config.hardware.sensor.iio.package;
   seed = "${pkgs.xiaomi-nabu-firmware}/share/qcom/sm8150/xiaomi/nabu";
+  sdspDevice = "dev-fastrpc\\x2dsdsp.device";
 in
 {
   imports = [ ./sensors-recovery.nix ];
@@ -39,15 +40,24 @@ in
       }
     ];
 
-    # Upstream only tags FastRPC for light/compass by default. nabu also
-    # exposes its accelerometer through SSC; leave axis calibration to SEE.
-    services.udev.extraRules = lib.mkIf cfg.proxy.enable ''
-      SUBSYSTEM=="misc", KERNEL=="fastrpc-sdsp", ENV{IIO_SENSOR_PROXY_TYPE}+="ssc-accel"
+    services.udev.extraRules = ''
+      SUBSYSTEM=="misc", KERNEL=="fastrpc-sdsp", TAG+="systemd"
+    ''
+    + lib.optionalString cfg.autoStart ''
+      ACTION=="add", SUBSYSTEM=="misc", KERNEL=="fastrpc-sdsp", ENV{SYSTEMD_WANTS}+="hexagonrpcd.service"
+    ''
+    + lib.optionalString cfg.proxy.enable ''
+      SUBSYSTEM=="misc", KERNEL=="fastrpc-sdsp", ENV{IIO_SENSOR_PROXY_TYPE}+="ssc-accel", ENV{ACCEL_MOUNT_MATRIX}="-1,0,0;0,-1,0;0,0,1"
     '';
 
     systemd.services.hexagonrpcd = {
       description = "Nabu SLPI sensor file service";
       wantedBy = lib.optional cfg.autoStart "multi-user.target";
+      # SLPI recovery removes and recreates this device. An old open fd
+      # cannot serve the new DSP; stop on removal and start on the new add.
+      bindsTo = [ sdspDevice ];
+      after = [ sdspDevice ];
+      wants = lib.optional cfg.proxy.enable "iio-sensor-proxy.service";
       before = lib.optional cfg.proxy.enable "iio-sensor-proxy.service";
       path = [ pkgs.coreutils ];
       preStart = ''
@@ -64,6 +74,7 @@ in
         # Type=exec confirms execve, not PD/SEE readiness. Keep sampling out
         # of this service: --timeout in ssccli starts only after open_sync.
         TimeoutStartSec = "30s";
+        TimeoutStopSec = "5s";
         Restart = "no";
       };
     };
@@ -73,6 +84,9 @@ in
       after = [ "hexagonrpcd.service" ];
       partOf = [ "hexagonrpcd.service" ];
       serviceConfig = {
+        # Closing SSC clients can time out against a vanished DSP. Do not
+        # hold up the new file service through the firmware's init watchdog.
+        TimeoutStopSec = "10s";
         Restart = "no";
       };
     };

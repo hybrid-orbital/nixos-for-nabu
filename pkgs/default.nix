@@ -20,6 +20,11 @@ in
   # Qualcomm protection domain mapper (missing from nixpkgs)
   pd-mapper = final.callPackage ./pd-mapper.nix { };
 
+  # Both ssccli and iio-sensor-proxy must use the fixed error callbacks.
+  libssc = prev.libssc.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [ ./libssc/0001-log-errors-before-task-transfer.patch ];
+  });
+
   # Device firmware from the postmarketOS firmware repo
   xiaomi-nabu-firmware = final.callPackage ./nabu-firmware.nix { };
 
