@@ -133,6 +133,10 @@ let
         name = "fastrpc-nabu-sdsp-mappings";
         patch = ./patches/0012-misc-fastrpc-nabu-sdsp-mappings.patch;
       }
+      {
+        name = "fastrpc-preserve-invoke-across-freezer";
+        patch = ../patches/0006-misc-fastrpc-preserve-invoke-across-freezer.patch;
+      }
     ];
 
     extraConfig = extraConfig;

@@ -38,6 +38,7 @@ cp "$src/drivers/soc/qcom/"{qcom_pd_mapper.c,pdr_internal.h} "$output/work/drive
 cd "$output/work"
 for p in \
   "$repo/pkgs/kernel/$1/patches/$rpc_patch" \
+  "$repo/pkgs/kernel/patches/0006-misc-fastrpc-preserve-invoke-across-freezer.patch" \
   "$repo/pkgs/kernel/patches/0001-soc-qcom-pd-mapper-add-sm8150-slpi-domains.patch"; do
   if patch --dry-run --batch --forward -p1 -F0 < "$p" >/dev/null 2>&1; then
     patch --batch --forward -p1 -F0 < "$p"

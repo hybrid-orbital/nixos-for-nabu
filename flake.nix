@@ -54,6 +54,9 @@
         fastrpc-alias = import ./tests/fastrpc-alias.nix {
           pkgs = nixpkgs.legacyPackages.${system};
         };
+        fastrpc-freezer = import ./tests/fastrpc-freezer.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+        };
         sensors-policy = import ./tests/sensors-policy.nix {
           pkgs = nixpkgs.legacyPackages.${system};
           inherit lib;

@@ -4,6 +4,10 @@
 libssc 0.4.4、iio-sensor-proxy 3.9 和 Linux 7.2.6 源码。原始日志留在工作区，
 不纳入提交（其中含设备、网络和用户环境信息）。
 
+后续 SSH 实机调查已将首次 fatal 收敛到 **freezer 打断 FastRPC 后重发请求**，
+两个内核新增共享修复，尚待 CI 编译及修复后上机验收。
+证据、补丁边界和验收步骤见 [SLPI freezer 调查](slpi-freezer-fatal.md)。
+
 ## 日志能确定什么
 
 - dmesg 的 82.884 s 开始 s2idle；83.895 s PDM 报 `sensor_process` 的
@@ -85,7 +89,7 @@ kernel 的 `fastrpc_rpmsg_remove()` 使旧 channel 的 `rpdev` 失效，随后�
 
 | 优先级 | 日志证据 | 可能原因 / 已知边界 | 状态 |
 | --- | --- | --- | --- |
-| 高 | resume 后 `frpc_dsp` fatal，随后 PD 初始化 watchdog | 固件、FastRPC 在 suspend/resume 的会话/内存访问状态不一致；日志没有对应 SMMU fault，不能锁定 alias 或某个 IOVA。文件服务旧 fd 可解释恢复失败的一部分 | 用户态恢复已补；首次固件 fatal 未解决 |
+| 高 | resume 后 `frpc_dsp` fatal，随后 PD 初始化 watchdog | 后续 freezer-only 测试复现同 PC fatal，并捕获 FastRPC 返回 -ERESTARTSYS 后重新进入；源码会发送第二次请求。后续 watchdog 与旧文件服务生命周期仍属另一层问题 | 已补 freezer 等待修复；待新内核上机验收，见专项报告 |
 | 中 | SLPI 从启动开始反复 `Handover signaled, but it already happened`，部分间隔约 187 ms | q6v5 源码在 `handover_issued=true` 再收到 handover IRQ 时打印；重复通知源可能是固件或 SMP2P/中断信号。不是重新执行了 handover 资源释放 | TODO；不能简单屏蔽消息当作修复 |
 | 中 | UFS 约 10 s 就绪，根 Btrfs 15 s 挂载，19.8 s 进入 stage 2，33 s 大批硬件 probe，54.5 s SLIM master capability | 启动耗时分散在存储、initrd、用户态模块加载和 DSP/音频 readiness；dmesg 不是 systemd critical chain，无法把总启动慢归咎于一条 WARN | TODO |
 | 中 | 20.7 s cpufreq/USB/DSI deferred probe；33 s 已出现 CPU energy model、backlight 等初始化 | interconnect、Type-C connector、backlight 等供应者较晚出现；至少部分 deferred probe 是暂态，而非永久缺驱动 | TODO |
