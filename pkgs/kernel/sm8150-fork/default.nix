@@ -305,6 +305,12 @@ kernel.overrideAttrs (previousAttrs: {
       case "$requirement" in
         ""|'#'*) continue ;;
       esac
+      # QCOM_APR=y selects this hidden tristate built-in in the fork.
+      # A modular FastRPC can use either built-in or modular PDR helpers.
+      if [ "$requirement" = CONFIG_QCOM_PDR_HELPERS=m ] &&
+         grep -Fqx CONFIG_QCOM_PDR_HELPERS=y "$buildRoot/.config"; then
+        continue
+      fi
       if ! grep -Fqx "$requirement" "$buildRoot/.config"; then
         echo "ERROR: required nabu kernel setting is missing: $requirement" >&2
         exit 1

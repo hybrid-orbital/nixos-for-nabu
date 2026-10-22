@@ -22,9 +22,13 @@ output=$(realpath -m "$4")
 for f in .config Module.symvers include/config/kernel.release; do
   test -s "$build/$f" || { echo "missing prepared build file: $build/$f" >&2; exit 1; }
 done
-for cfg in CONFIG_ARM64=y CONFIG_QCOM_FASTRPC=m CONFIG_QCOM_PD_MAPPER=m CONFIG_QCOM_PDR_HELPERS=m; do
+for cfg in CONFIG_ARM64=y CONFIG_QCOM_FASTRPC=m CONFIG_QCOM_PD_MAPPER=m; do
   grep -qx "$cfg" "$build/.config" || { echo "required: $cfg" >&2; exit 1; }
 done
+grep -Eq '^CONFIG_QCOM_PDR_HELPERS=(m|y)$' "$build/.config" || {
+  echo "required: CONFIG_QCOM_PDR_HELPERS=m or y" >&2
+  exit 1
+}
 # mkdir fails on an existing output, so neither source nor previous results
 # can be overwritten. Keep the work tree for inspecting compiler failures.
 mkdir "$output"

@@ -4,6 +4,12 @@
 均为 running，进入 sensors-lab 正常；手动启动 hexagonrpcd 后立即卡死，约十秒重启。
 本次直接实现可测试的替代方案，不把它描述成已经验证的根因修复。
 
+后续真机反馈：用户报告 mainline-latest 的传感器功能全部正常工作。
+sm8150-fork 的 CI 在 postConfigure 校验失败，尚未进入 C 编译：日志中
+`QCOM_APR=y` 会 select 隐藏的 `QCOM_PDR_HELPERS=y`，原检查却只接受 `m`。
+现仅对该依赖接受 `m` 或 `y`，其余 fork 配置要求保持严格；局部模块构建脚本同步修正。
+这项修复不改变已验证的 mainline 驱动及 DT，fork 仍待重新 CI 编译和上机验证。
+
 ## 实现选择
 
 撤换原先的 sensors-PD remote-heap 一行补丁。nabu 没有定义 FastRPC 物理
@@ -36,7 +42,7 @@ coherency 是沿用可工作参考树的板级假设，**尚未经本项目独�
   物理页可以不连续。修正导入失败时原有的重复 detach / 未正确 unmap 的清理路径。
 - attach 前等待 PDR 公告的 root PD UP，最多 15 秒；超时返回错误。PD mapper
   两个 SLPI 域条目继续保留。FastRPC 在 NET/QRTR 可用时选择 PDR helpers，配置
-  检查要求该模块存在。remoteproc running 不作为 PD readiness 的替代；PDR 已 DOWN 时拒绝新的 invoke。
+  检查要求该功能内置或作为模块启用。remoteproc running 不作为 PD readiness 的替代；PDR 已 DOWN 时拒绝新的 invoke。
 - 仅在 sensors attach 成功、PD 仍 UP 且通道未移除时发送 nabu 的 release RPC。
   PDR 等待失败后的 close 不会再向未就绪 DSP 发一次 release。通道移除唤醒等待者，
   释放 PDR 订阅后再释放 channel 对象。
