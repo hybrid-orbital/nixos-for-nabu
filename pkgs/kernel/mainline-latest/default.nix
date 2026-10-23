@@ -23,6 +23,7 @@
 #         which silenced exactly that amplifier (cs35l41_br) on nabu
 #   0011  configure nabu SLPI firmware, context banks and protection domain
 #   0012  nabu SDSP context-bank aliases, DMA lifecycle and PDR readiness
+#   0013  preserve SMP2P edge history on ordinary remote notifications
 #
 # The patches are a rebase of the sm8150-mainline tree (branch sm8150/6.17,
 # tag v6.17.0-sm8150) onto the version nixpkgs ships.  Keep them ordered: each
@@ -140,6 +141,14 @@ let
       {
         name = "nabu-charger-parameters-and-status";
         patch = ../patches/0007-power-supply-fix-nabu-smb5-parameters-and-status.patch;
+      }
+      {
+        name = "nabu-charger-adc-units";
+        patch = ../patches/0008-power-supply-qcom-smbx-fix-smb5-adc-units.patch;
+      }
+      {
+        name = "smp2p-reset-state-only-on-ssr";
+        patch = ./patches/0013-soc-qcom-smp2p-reset-state-only-on-ssr.patch;
       }
     ];
 

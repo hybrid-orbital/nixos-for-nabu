@@ -1,0 +1,34 @@
+From: Nabu Linux contributors
+Subject: [PATCH] soc: qcom: smp2p: reset inbound state only on subsystem restart
+
+The SMP2P v2 support clears each inbound entry's last_value even when the
+restart-done flag matches the acknowledged state. Ordinary notifications
+then replay every asserted bit as a rising edge. On nabu, SLPI notifications
+with slave-kernel == 0x6 repeatedly dispatch ready and handover, producing
+"Handover signaled, but it already happened" at the sensor notification rate.
+
+Preserve edge history unless a restart is actually pending. Keep resetting
+it on a real restart so v2 peers that reassert bits before the SSR ack are
+still handled.
+
+This regression is present in the pinned mainline kernel; the 6.17 sm8150
+fork predates the reset loop and does not need this patch.
+
+---
+ drivers/soc/qcom/smp2p.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/soc/qcom/smp2p.c b/drivers/soc/qcom/smp2p.c
+--- a/drivers/soc/qcom/smp2p.c
++++ b/drivers/soc/qcom/smp2p.c
+@@ -194,6 +194,10 @@ static bool qcom_smp2p_check_ssr(struct qcom_smp2p *smp2p)
+ 
+ 	restart_done = in->flags & BIT(SMP2P_FLAGS_RESTART_DONE_BIT);
+ 	restart = restart_done != smp2p->ssr_ack;
++	if (!restart)
++		return false;
++
++	/* Replay asserted bits only after a remote subsystem restart. */
+ 	list_for_each_entry(entry, &smp2p->inbound, node) {
+ 		if (!entry->value)
+ 			continue;

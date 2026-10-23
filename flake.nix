@@ -57,6 +57,9 @@
         fastrpc-freezer = import ./tests/fastrpc-freezer.nix {
           pkgs = nixpkgs.legacyPackages.${system};
         };
+        smp2p-ssr = import ./tests/smp2p-ssr.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+        };
         sensors-policy = import ./tests/sensors-policy.nix {
           pkgs = nixpkgs.legacyPackages.${system};
           inherit lib;

@@ -1,0 +1,46 @@
+From: Nabu Linux contributors
+Subject: [PATCH] power: supply: qcom_smbx: correct SMB5 USB ADC units
+
+ADC5_USB_IN_V_16 is already converted to input microvolts by the ADC
+provider using the 1:16 prescale from DT. Multiplying it by 16 again makes
+a 4.8 V USB input appear as 77 V.
+
+ADC5_USB_IN_I returns the sense voltage in microvolts. PM8150B uses 0.2 V/A
+in buck mode, so multiply by five to report microamps. The existing helper
+only reads while charging, so this does not describe the boost-mode scale.
+
+This corrects telemetry only; it does not change input limits or charging
+policy. Leave SMB2 current conversion unchanged.
+
+---
+ drivers/power/supply/qcom_smbx.c | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -679,16 +679,16 @@ static int smb_get_property(struct power_supply *psy,
+ 	case POWER_SUPPLY_PROP_CURRENT_MAX:
+ 		return smb_get_current_limit(chip, &val->intval);
+ 	case POWER_SUPPLY_PROP_CURRENT_NOW:
+-		return smb_get_iio_chan(chip, chip->usb_in_i_chan,
++		ret = smb_get_iio_chan(chip, chip->usb_in_i_chan,
+ 					 &val->intval);
+-	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+-		ret = smb_get_iio_chan(chip, chip->usb_in_v_chan,
+-					 &val->intval);
+-		if (!ret) {
+-			if (chip->gen == SMB5)
+-				val->intval *= 16;
+-		}
++		/* SMB5 buck-mode current sense is 0.2 V/A. */
++		if (!ret && chip->gen == SMB5)
++			val->intval *= 5;
+ 		return ret;
++	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
++		/* The ADC provider has already applied the DT prescale. */
++		return smb_get_iio_chan(chip, chip->usb_in_v_chan,
++					 &val->intval);
+ 	case POWER_SUPPLY_PROP_ONLINE:
+ 		return smb_get_prop_usb_online(chip, &val->intval);
+ 	case POWER_SUPPLY_PROP_STATUS:
