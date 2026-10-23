@@ -137,6 +137,10 @@ let
         name = "fastrpc-preserve-invoke-across-freezer";
         patch = ../patches/0006-misc-fastrpc-preserve-invoke-across-freezer.patch;
       }
+      {
+        name = "nabu-charger-parameters-and-status";
+        patch = ../patches/0007-power-supply-fix-nabu-smb5-parameters-and-status.patch;
+      }
     ];
 
     extraConfig = extraConfig;

@@ -240,6 +240,10 @@ let
         name = "nabu-defconfig";
         patch = defconfigPatch;
       }
+      {
+        name = "nabu-charger-parameters-and-status";
+        patch = ../patches/0007-power-supply-fix-nabu-smb5-parameters-and-status.patch;
+      }
     ];
 
     # The merged defconfig already disables SPI_MT65XX. LOCALVERSION_AUTO keeps

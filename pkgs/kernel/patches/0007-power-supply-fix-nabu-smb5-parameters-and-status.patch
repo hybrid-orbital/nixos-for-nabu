@@ -1,0 +1,238 @@
+--- a/drivers/power/supply/qcom_smbx.c
++++ b/drivers/power/supply/qcom_smbx.c
+@@ -109,7 +109,7 @@
+ #define AUTO_SRC_DETECT_BIT				BIT(3)
+ #define HVDCP_EN_BIT					BIT(2)
+ 
+-#define USBIN_LOAD_CFG					0x65
++#define USBIN_LOAD_CFG					0x365
+ #define ICL_OVERRIDE_AFTER_APSD_BIT			BIT(4)
+ 
+ #define USBIN_ICL_OPTIONS				0x366
+@@ -141,7 +141,7 @@
+ #define USBIN_CONT_AICL_THRESHOLD_CFG			0x384
+ #define USBIN_CONT_AICL_THRESHOLD_CFG_MASK		GENMASK(5, 0)
+ 
+-#define ICL_STATUS(smb)					(SMB_REG_OFFSET(smb) + 0x07)
++#define ICL_STATUS(smb)					(SMB_REG_OFFSET(smb) + ((smb)->gen == SMB5 ? 0x08 : 0x07))
+ #define INPUT_CURRENT_LIMIT_MASK			GENMASK(7, 0)
+ 
+ #define POWER_PATH_STATUS(smb)				(SMB_REG_OFFSET(smb) + 0x0B)
+@@ -242,6 +242,7 @@
+ 
+ 	struct delayed_work status_change_work;
+ 	int cable_irq;
++	atomic_t attach_retries;
+ 	bool wakeup_enabled;
+ 
+ 	struct iio_channel *usb_in_i_chan;
+@@ -343,7 +344,7 @@
+ 		mask = SMB2_CHARGER_ERROR_STATUS_BAT_OV_BIT;
+ 		break;
+ 	case SMB5:
+-		reg = BATTERY_CHARGER_STATUS_7;
++		reg = BATTERY_CHARGER_STATUS_2;
+ 		mask = SMB5_CHARGER_ERROR_STATUS_BAT_OV_BIT;
+ 		break;
+ 	}
+@@ -352,7 +353,7 @@
+ 	if (rc)
+ 		return rc;
+ 
+-	return !!(reg & mask);
++	return !!(val & mask);
+ }
+ 
+ static int smb_get_prop_status(struct smb_chip *chip, int *val)
+@@ -386,6 +387,16 @@
+ 	}
+ 
+ 	stat = stat & BATTERY_CHARGER_STATUS_MASK;
++
++	if (chip->gen == SMB5) {
++		/* SMB5: inhibit, trickle, precharge, fullon, taper,
++		 * terminate, pause, disable.
++		 */
++		*val = stat == 0 || stat == 5 ? POWER_SUPPLY_STATUS_FULL :
++		       stat >= 6 ? POWER_SUPPLY_STATUS_NOT_CHARGING :
++		       POWER_SUPPLY_STATUS_CHARGING;
++		return 0;
++	}
+ 
+ 	switch (stat) {
+ 	case TRICKLE_CHARGE:
+@@ -414,7 +425,7 @@
+ 	int rc = regmap_read(chip->regmap, chip->base + ICL_STATUS(chip), val);
+ 
+ 	if (rc >= 0)
+-		*val *= CURRENT_SCALE_FACTOR;
++		*val *= chip->gen == SMB5 ? 50000 : CURRENT_SCALE_FACTOR;
+ 	return rc;
+ }
+ 
+@@ -427,7 +438,7 @@
+ 			"Can't set current limit higher than 4800000uA");
+ 		return -EINVAL;
+ 	}
+-	val_raw = val / CURRENT_SCALE_FACTOR;
++	val_raw = val / (chip->gen == SMB5 ? 50000 : CURRENT_SCALE_FACTOR);
+ 
+ 	return regmap_write(chip->regmap, chip->base + USBIN_CURRENT_LIMIT_CFG,
+ 			    val_raw);
+@@ -442,9 +453,15 @@
+ 
+ 	chip = container_of(work, struct smb_chip, status_change_work.work);
+ 
+-	smb_get_prop_usb_online(chip, &usb_online);
+-	if (!usb_online)
++	rc = smb_get_prop_usb_online(chip, &usb_online);
++	if (rc || !usb_online) {
++		/* Bounded settling retries; never force hardware out of suspend. */
++		if (atomic_inc_return(&chip->attach_retries) <= 5)
++			schedule_delayed_work(&chip->status_change_work,
++					      msecs_to_jiffies(1000));
++		power_supply_changed(chip->chg_psy);
+ 		return;
++	}
+ 
+ 	for (count = 0; count < 3; count++) {
+ 		dev_dbg(chip->dev, "get charger type retry %d\n", count);
+@@ -481,7 +498,9 @@
+ 		break;
+ 	}
+ 
+-	smb_set_current_limit(chip, current_ua);
++	rc = smb_set_current_limit(chip, current_ua);
++	if (rc)
++		dev_err(chip->dev, "Failed to set input current: %d\n", rc);
+ 	power_supply_changed(chip->chg_psy);
+ }
+ 
+@@ -624,7 +643,12 @@
+ 	case POWER_SUPPLY_PROP_HEALTH:
+ 		return smb_get_prop_health(chip, &val->intval);
+ 	case POWER_SUPPLY_PROP_USB_TYPE:
+-		return smb_apsd_get_charger_type(chip, &val->intval);
++		ret = smb_apsd_get_charger_type(chip, &val->intval);
++		if (ret == -EAGAIN) {
++			val->intval = POWER_SUPPLY_USB_TYPE_UNKNOWN;
++			return 0;
++		}
++		return ret;
+ 	default:
+ 		dev_err(chip->dev, "invalid property: %d\n", psp);
+ 		return -EINVAL;
+@@ -680,8 +704,9 @@
+ 
+ 	power_supply_changed(chip->chg_psy);
+ 
+-	schedule_delayed_work(&chip->status_change_work,
+-			      msecs_to_jiffies(1500));
++	atomic_set(&chip->attach_retries, 0);
++	mod_delayed_work(system_wq, &chip->status_change_work,
++			 msecs_to_jiffies(1500));
+ 
+ 	return IRQ_HANDLED;
+ }
+@@ -702,7 +727,7 @@
+ 
+ 	power_supply_changed(chip->chg_psy);
+ 
+-	rc = regmap_write(chip->regmap, BARK_BITE_WDOG_PET,
++	rc = regmap_write(chip->regmap, chip->base + BARK_BITE_WDOG_PET,
+ 			  BARK_BITE_WDOG_PET_BIT);
+ 	if (rc < 0)
+ 		dev_err(chip->dev, "Couldn't pet the dog rc=%d\n", rc);
+@@ -804,7 +829,7 @@
+ 	 */
+ 	{ .addr = FAST_CHARGE_CURRENT_CFG,
+ 	  .mask = FAST_CHARGE_CURRENT_SETTING_MASK,
+-	  .val = 1950000 / CURRENT_SCALE_FACTOR },
++	  .val = 1950000 / 50000 },
+ };
+ 
+ /* Init sequence derived from vendor downstream driver */
+@@ -1050,7 +1075,14 @@
+ 		return dev_err_probe(chip->dev, rc,
+ 				     "Failed to init status change work\n");
+ 
+-	rc = (chip->batt_info->voltage_max_design_uv - 3487500) / 7500 + 1;
++	if (chip->gen == SMB5) {
++		if (chip->batt_info->voltage_max_design_uv < 3600000 ||
++		    chip->batt_info->voltage_max_design_uv > 4790000)
++			return -EINVAL;
++		rc = (chip->batt_info->voltage_max_design_uv - 3600000) / 10000;
++	} else {
++		rc = (chip->batt_info->voltage_max_design_uv - 3487500) / 7500 + 1;
++	}
+ 	rc = regmap_update_bits(chip->regmap, chip->base + FLOAT_VOLTAGE_CFG,
+ 				FLOAT_VOLTAGE_SETTING_MASK, rc);
+ 	if (rc < 0)
+@@ -1090,7 +1122,7 @@
+ 	 * reporting.
+ 	 */
+ 	rc = regmap_write(chip->regmap, chip->base + FAST_CHARGE_CURRENT_CFG,
+-			  1950000 / CURRENT_SCALE_FACTOR);
++			  1950000 / (chip->gen == SMB5 ? 50000 : CURRENT_SCALE_FACTOR));
+ 	if (rc < 0)
+ 		return dev_err_probe(chip->dev, rc,
+ 				     "Couldn't write fast charge current cfg");
+--- a/drivers/power/supply/qcom_fg.c
++++ b/drivers/power/supply/qcom_fg.c
+@@ -901,10 +901,11 @@
+ 
+ 	switch (psp) {
+ 	case POWER_SUPPLY_PROP_STATUS:
+-		/* Get status from charger if available */
++		/* Query the supplier so missed notifications cannot stale status. */
+ 		if (chip->chg_psy &&
+-		    chip->status != POWER_SUPPLY_STATUS_UNKNOWN) {
+-			val->intval = chip->status;
++		    !power_supply_get_property(chip->chg_psy,
++				POWER_SUPPLY_PROP_STATUS, val) &&
++		    val->intval != POWER_SUPPLY_STATUS_UNKNOWN) {
+ 			break;
+ 		} else {
+ 			/*
+@@ -926,9 +927,9 @@
+ 				val->intval = POWER_SUPPLY_STATUS_UNKNOWN;
+ 				break;
+ 			}
+-			if (temp < 0)
++			if (temp > 0)
+ 				val->intval = POWER_SUPPLY_STATUS_CHARGING;
+-			else if (temp > 0)
++			else if (temp < 0)
+ 				val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
+ 			else
+ 				val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
+@@ -1132,7 +1133,8 @@
+ 		if (ret)
+ 			chip->status = POWER_SUPPLY_STATUS_UNKNOWN;
+ 
+-		chip->status = propval.intval;
++		else
++			chip->status = propval.intval;
+ 
+ 		power_supply_changed(chip->batt_psy);
+ 
+@@ -1222,6 +1224,7 @@
+ 	}
+ 
+ 	supply_config.drv_data = chip;
++	supply_config.fwnode = dev_fwnode(chip->dev);
+ 
+ 	chip->batt_psy = devm_power_supply_register(chip->dev, &batt_psy_desc,
+ 						    &supply_config);
+@@ -1354,6 +1357,11 @@
+ {
+ 	struct qcom_fg_chip *chip = platform_get_drvdata(pdev);
+ 
++	if (chip->chg_psy) {
++		power_supply_unreg_notifier(&chip->nb);
++		cancel_delayed_work_sync(&chip->status_changed_work);
++		power_supply_put(chip->chg_psy);
++	}
+ 	power_supply_put_battery_info(chip->batt_psy, chip->batt_info);
+ 
+ 	if (chip->sram_wq)
