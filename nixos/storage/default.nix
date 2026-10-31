@@ -6,7 +6,7 @@
     description = "Persistent system state directory, also used for image initialization data.";
   };
 
-  config.boot.initrd.systemd = lib.mkIf config.boot.initrd.systemd.enable {
+  config.boot.initrd.systemd = {
     # fstab's x-systemd.growfs needs these in the initrd as well as stage 2.
     additionalUpstreamUnits = [
       "systemd-growfs@.service"

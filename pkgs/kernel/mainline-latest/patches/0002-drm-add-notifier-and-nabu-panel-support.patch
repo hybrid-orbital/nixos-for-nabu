@@ -11,7 +11,7 @@ index b9300a1..aa9ddd4 100644
        - items:
            - enum:
 diff --git a/drivers/gpu/drm/Makefile b/drivers/gpu/drm/Makefile
-index e97faab..3f6337a 100644
+index e635fcf..68c5310 100644
 --- a/drivers/gpu/drm/Makefile
 +++ b/drivers/gpu/drm/Makefile
 @@ -72,7 +72,8 @@ drm-y := \
@@ -89,7 +89,7 @@ index 0000000..0b90d02
 +}
 +EXPORT_SYMBOL(mi_drm_notifier_call_chain);
 diff --git a/drivers/gpu/drm/msm/dsi/dsi_manager.c b/drivers/gpu/drm/msm/dsi/dsi_manager.c
-index 46faeaa..5a99f3a 100644
+index 959daa8..6d8113b 100644
 --- a/drivers/gpu/drm/msm/dsi/dsi_manager.c
 +++ b/drivers/gpu/drm/msm/dsi/dsi_manager.c
 @@ -7,6 +7,7 @@
@@ -100,11 +100,12 @@ index 46faeaa..5a99f3a 100644
  
  #define DSI_CLOCK_MASTER	DSI_0
  #define DSI_CLOCK_SLAVE		DSI_1
-@@ -275,6 +276,14 @@ static void dsi_mgr_bridge_power_off(struct drm_bridge *bridge)
+@@ -275,6 +276,15 @@ static void dsi_mgr_bridge_power_off(struct drm_bridge *bridge)
  	dsi_mgr_phy_disable(id);
  }
  
-+static void dsi_mgr_bridge_enable(struct drm_bridge *bridge)
++static void dsi_mgr_bridge_enable(struct drm_bridge *bridge,
++				  struct drm_atomic_commit *commit)
 +{
 +	enum drm_notifier_data notifier_data;
 +
@@ -112,10 +113,10 @@ index 46faeaa..5a99f3a 100644
 +	mi_drm_notifier_call_chain(MI_DRM_EVENT_BLANK, &notifier_data);
 +}
 +
- static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge)
+ static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge,
+ 				      struct drm_atomic_commit *commit)
  {
- 	int id = dsi_mgr_bridge_get_id(bridge);
-@@ -339,9 +348,13 @@ static void dsi_mgr_bridge_post_disable(struct drm_bridge *bridge)
+@@ -341,9 +351,13 @@ static void dsi_mgr_bridge_post_disable(struct drm_bridge *bridge,
  	struct mipi_dsi_host *host = msm_dsi->host;
  	bool is_bonded_dsi = IS_BONDED_DSI();
  	int ret;
@@ -129,15 +130,15 @@ index 46faeaa..5a99f3a 100644
  	/*
  	 * Do nothing with the host if it is slave-DSI in case of bonded DSI.
  	 * It is safe to call dsi_mgr_phy_disable() here because a single PHY
-@@ -447,6 +460,7 @@ static int dsi_mgr_bridge_attach(struct drm_bridge *bridge,
- static const struct drm_bridge_funcs dsi_mgr_bridge_funcs = {
+@@ -452,6 +466,7 @@ static const struct drm_bridge_funcs dsi_mgr_bridge_funcs = {
+ 	.atomic_duplicate_state = drm_atomic_helper_bridge_duplicate_state,
  	.attach = dsi_mgr_bridge_attach,
- 	.pre_enable = dsi_mgr_bridge_pre_enable,
-+	.enable = dsi_mgr_bridge_enable,
- 	.post_disable = dsi_mgr_bridge_post_disable,
+ 	.atomic_pre_enable = dsi_mgr_bridge_pre_enable,
++	.atomic_enable = dsi_mgr_bridge_enable,
+ 	.atomic_post_disable = dsi_mgr_bridge_post_disable,
  	.mode_set = dsi_mgr_bridge_mode_set,
  	.mode_valid = dsi_mgr_bridge_mode_valid,
-@@ -491,7 +505,7 @@ int msm_dsi_manager_connector_init(struct msm_dsi *msm_dsi,
+@@ -496,7 +511,7 @@ int msm_dsi_manager_connector_init(struct msm_dsi *msm_dsi,
  int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
  {
  	struct msm_dsi *msm_dsi = dsi_mgr_get_dsi(id);
@@ -146,7 +147,7 @@ index 46faeaa..5a99f3a 100644
  	struct mipi_dsi_host *host = msm_dsi->host;
  	bool is_read = (msg->rx_buf && msg->rx_len);
  	bool need_sync = (IS_SYNC_NEEDED() && !is_read);
-@@ -502,14 +516,14 @@ int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
+@@ -507,14 +522,14 @@ int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
  
  	/* In bonded master case, panel requires the same commands sent to
  	 * both DSI links. Host issues the command trigger to both links
@@ -166,7 +167,7 @@ index 46faeaa..5a99f3a 100644
  		if (ret) {
  			pr_err("%s: failed to prepare non-trigger host, %d\n",
  				__func__, ret);
-@@ -528,8 +542,8 @@ int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
+@@ -533,8 +548,8 @@ int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
  	msm_dsi_host_xfer_restore(host, msg);
  
  restore_host0:
@@ -177,7 +178,7 @@ index 46faeaa..5a99f3a 100644
  
  	return ret;
  }
-@@ -537,14 +551,14 @@ int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
+@@ -542,14 +557,14 @@ int msm_dsi_manager_cmd_xfer(int id, const struct mipi_dsi_msg *msg)
  bool msm_dsi_manager_cmd_xfer_trigger(int id, u32 dma_base, u32 len)
  {
  	struct msm_dsi *msm_dsi = dsi_mgr_get_dsi(id);
@@ -197,10 +198,10 @@ index 46faeaa..5a99f3a 100644
  	msm_dsi_host_cmd_xfer_commit(host, dma_base, len);
  
 diff --git a/drivers/gpu/drm/panel/panel-novatek-nt36523.c b/drivers/gpu/drm/panel/panel-novatek-nt36523.c
-index 226d91d..4ace767 100644
+index 34b9123..1edf1c8 100644
 --- a/drivers/gpu/drm/panel/panel-novatek-nt36523.c
 +++ b/drivers/gpu/drm/panel/panel-novatek-nt36523.c
-@@ -477,6 +477,205 @@ static int elish_csot_init_sequence(struct panel_info *pinfo)
+@@ -478,6 +478,205 @@ static int elish_csot_init_sequence(struct panel_info *pinfo)
  	return dsi_ctx.accum_err;
  }
  
@@ -406,7 +407,7 @@ index 226d91d..4ace767 100644
  static int j606f_boe_init_sequence(struct panel_info *pinfo)
  {
  	struct mipi_dsi_device *dsi = pinfo->dsi[0];
-@@ -914,6 +1113,20 @@ static const struct drm_display_mode elish_csot_modes[] = {
+@@ -915,6 +1114,20 @@ static const struct drm_display_mode elish_csot_modes[] = {
  	},
  };
  
@@ -427,7 +428,7 @@ index 226d91d..4ace767 100644
  static const struct drm_display_mode j606f_boe_modes[] = {
  	{
  		.clock = (1200 + 58 + 2 + 60) * (2000 + 26 + 2 + 93) * 60 / 1000,
-@@ -966,6 +1179,24 @@ static const struct panel_desc elish_csot_desc = {
+@@ -967,6 +1180,24 @@ static const struct panel_desc elish_csot_desc = {
  	.is_dual_dsi = true,
  };
  
@@ -452,7 +453,7 @@ index 226d91d..4ace767 100644
  static const struct panel_desc j606f_boe_desc = {
  	.modes = j606f_boe_modes,
  	.num_modes = ARRAY_SIZE(j606f_boe_modes),
-@@ -1253,6 +1484,10 @@ static const struct of_device_id nt36523_of_match[] = {
+@@ -1254,6 +1485,10 @@ static const struct of_device_id nt36523_of_match[] = {
  		.compatible = "xiaomi,elish-csot-nt36523",
  		.data = &elish_csot_desc,
  	},

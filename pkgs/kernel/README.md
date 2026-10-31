@@ -86,7 +86,48 @@ build time and space; it only changes `mainline-latest`, not the default fork.
 
 ### Status of `mainline-latest`
 
-Verified:
+The current lock selects Linux **7.3** from nixpkgs `1c89083e451e`
+(2026-10-30). The 7.3 port:
+
+- moves the display-unblank notifier to the atomic DRM bridge enable callback,
+  preserving the notification after panel preparation;
+- rebases the SM8150 device-tree binding and FastRPC alias/PDR patches while
+  retaining the new upstream NULL-buffer check and polling support;
+- places the shared freezer wait helper before both kernels' call sites and
+  patches 7.3's response-wait helper, including the fallback from polling;
+- drops the downstream GENI serial suspend/resume hunk, since 7.3 already
+  forces runtime suspend/resume and handles `no_console_suspend` symmetrically;
+- drops stale MAINTAINERS edits, including a reference to a nonexistent charger
+  source file; the remote-endpoint fix remains;
+- retains the bonded DSI PLL, A640/A680 GBIF, SMB5 and SMP2P fixes.
+
+The nixpkgs update also removes scripted initrd support. The flake updates
+impermanence to `fa627f4c8b8e`, removes the obsolete initrd enable/verbose
+options, and always includes the systemd growfs units used by both storage
+profiles.
+
+Verified locally on x86_64:
+
+- all 18 downstream patches apply to pristine 7.3 sources with zero fuzz;
+- the shared FastRPC freezer patch also applies to the 6.17 fork with zero fuzz;
+- both kernels' ARM64 configurations generate successfully, and 7.3 passes
+  the required nabu configuration checks;
+- `nix flake check --no-build --all-systems` passes;
+- all eight `checks.x86_64-linux` checks pass, including the ext4 and
+  impermanent QEMU boot, growth and persistence tests.
+
+The full 7.3 kernel build is not yet verified. Local cross-compilation was
+stopped before completion; use the
+[Build kernel and push to Cachix workflow](../../.github/workflows/build-kernel.yml)
+for complete native ARM64 builds of both kernels.
+
+Hardware validation of 7.3 is still required, including display/touch after
+suspend, charging, sensors and the Firefox GPU workload below. The default
+kernel remains `sm8150-fork`.
+
+#### Initial 7.2.3 port (historical)
+
+Verified for the initial port:
 
 - every patch in `patches/` applies to a pristine nixpkgs `linux-7.2.3` tree
   with no fuzz and no rejects;

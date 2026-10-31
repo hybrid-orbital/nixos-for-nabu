@@ -72,7 +72,6 @@ in
   # Aggressive console tracing coincided with intermittent grey-screen boots.
   boot.consoleLogLevel = 7;
   boot.plymouth.enable = false;
-  boot.initrd.verbose = true;
 
   boot.kernelParams = [
     # EFI stub output uses the firmware console before Linux takes over.

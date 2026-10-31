@@ -20,7 +20,6 @@ pkgs.testers.runNixOSTest {
       ]
       ++ lib.optional (variant == "impermanent") impermanence.nixosModules.impermanence;
       system.stateVersion = "25.11";
-      boot.initrd.systemd.enable = true;
       nabu.image.compress = false;
       fileSystems = lib.genAttrs (builtins.attrNames config.nabu.image.mountPaths) (_: {
         device = lib.mkForce "/dev/vda";

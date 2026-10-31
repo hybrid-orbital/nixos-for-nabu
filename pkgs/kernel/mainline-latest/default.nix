@@ -10,9 +10,9 @@
 #   0003  NT36523 (nt36xxx) SPI touchscreen driver
 #   0004  SM8150 ASoC machine driver (WCD9340/SLIMBUS sound card)
 #   0005  charging stack: qcom_fg fuel gauge + idtp9418 wireless charger
-#   0006  of/property remote-endpoint fix + MAINTAINERS entry
-#   0007  runtime fixes (ath10k MAC address + thermal, Adreno suspend,
-#         qcom-geni serial force suspend during system sleep)
+#   0006  of/property remote-endpoint fix
+#   0007  runtime fixes (ath10k MAC address + thermal, Adreno suspend)
+#         The qcom-geni serial system-sleep fix is upstream in 7.3.
 #   0008  re-apply the bonded dual-DSI PLL fix that 7.2.6 reverted (the Pad 5
 #         panel is a bonded panel)
 #   0009  A640/A680 CX GBIF initialization: 7.2.6 moved those writes into the
@@ -29,12 +29,11 @@
 # tag v6.17.0-sm8150) onto the version nixpkgs ships.  Keep them ordered: each
 # one applies on top of the previous ones.
 #
-# The kernel version therefore follows `flake.lock`: 7.2.6 is the minimum this
-# package is known to work with, because the 7.2.3 release is missing the msm
-# fixes that made the GPU fault under load (see README.md, "7.2.6 or newer").
-# Moving further up is a matter of updating the nixpkgs input and re-running
-# the patch application test; `linux_latest.override` cannot be used for this,
-# it does not propagate version/src.
+# The kernel version follows `flake.lock`; this patch series targets 7.3.
+# In particular, the DRM notifier uses the atomic bridge callbacks and the
+# FastRPC freezer fix covers the new response-wait helper. Further updates
+# need patch application, configuration and build checks; `linux_latest.override`
+# cannot select a version because it does not propagate version/src.
 #
 # nixpkgs' common config stays enabled (default for `buildLinux`): this is a
 # stock upstream tree, so a standard NixOS capable .config is the right base

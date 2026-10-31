@@ -8,7 +8,20 @@ SoCs' SID encoding and DMA masks. No unverified physical carveout is used.
 Physical remote-heap and secure imports are unsupported on this board;
 hexagonrpcd's apps_mem uses ADD_PAGES instead. Requires matching nabu DT.
 
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index 7364931..01bed81 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -269,6 +269,7 @@ config QCOM_FASTRPC
+ 	depends on RPMSG
+ 	select DMA_SHARED_BUFFER
+ 	select QCOM_SCM
++	select QCOM_PDR_HELPERS if NET && QRTR
+ 	help
+ 	  Provides a communication mechanism that allows for clients to
+ 	  make remote method invocations across processor boundary to
 diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
+index d4fac2c..41627ae 100644
 --- a/drivers/misc/fastrpc.c
 +++ b/drivers/misc/fastrpc.c
 @@ -6,6 +6,11 @@
@@ -23,7 +36,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  #include <linux/dma-resv.h>
  #include <linux/idr.h>
  #include <linux/list.h>
-@@ -189,11 +194,19 @@
+@@ -219,11 +224,19 @@ struct fastrpc_buf_overlap {
  	u64 offset;
  };
  
@@ -43,7 +56,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	dma_addr_t dma_addr;
  	u64 size;
  	/* Lock for dma buf attachments */
-@@ -217,6 +230,7 @@
+@@ -247,6 +260,7 @@ struct fastrpc_map {
  	struct dma_buf *buf;
  	struct sg_table *table;
  	struct dma_buf_attachment *attach;
@@ -51,7 +64,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	dma_addr_t dma_addr;
  	u64 size;
  	void *va;
-@@ -264,6 +278,11 @@
+@@ -302,6 +316,11 @@ struct fastrpc_soc_data {
  };
  
  struct fastrpc_channel_ctx {
@@ -63,7 +76,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	int domain_id;
  	int sesscount;
  	int vmcount;
-@@ -294,6 +313,7 @@
+@@ -335,6 +354,7 @@ struct fastrpc_device {
  };
  
  struct fastrpc_user {
@@ -71,7 +84,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	struct list_head user;
  	struct list_head maps;
  	struct list_head pending;
-@@ -314,14 +334,6 @@
+@@ -357,14 +377,6 @@ struct fastrpc_user {
  	struct kref refcount;
  };
  
@@ -86,12 +99,10 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  /*
   * Prepare the consolidated iova to send to DSP by prepending the SID
   * to smmu PA at the appropriate position
-@@ -330,6 +342,70 @@
- 				     struct fastrpc_session_ctx *sctx)
- {
+@@ -375,6 +387,70 @@ static inline u64 fastrpc_sid_offset(struct fastrpc_channel_ctx *cctx,
  	return (u64)sctx->sid << cctx->soc_data->sid_pos;
-+}
-+
+ }
+ 
 +/* The nabu firmware consumes the session-tagged address as an IOVA.
 + * Keep DMA-API allocations below 4 GiB and mirror them above that range.
 + * Never pass the tagged address back to the DMA API.
@@ -154,10 +165,12 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
 +rollback:
 +	fastrpc_alias_unmap(alias);
 +	return ret;
- }
- 
++}
++
  static void fastrpc_free_map(struct kref *ref)
-@@ -356,6 +432,7 @@
+ {
+ 	struct fastrpc_map *map;
+@@ -399,6 +475,7 @@ static void fastrpc_free_map(struct kref *ref)
  				return;
  			}
  		}
@@ -165,10 +178,10 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  		dma_buf_unmap_attachment_unlocked(map->attach, map->table,
  						  DMA_BIDIRECTIONAL);
  		dma_buf_detach(map->buf, map->attach);
-@@ -422,8 +499,9 @@
+@@ -468,8 +545,9 @@ static void fastrpc_buf_free(struct fastrpc_buf *buf)
+ 	if (!buf)
+ 		return;
  
- static void fastrpc_buf_free(struct fastrpc_buf *buf)
- {
 +	fastrpc_alias_unmap(&buf->alias);
  	dma_free_coherent(buf->dev, buf->size, buf->virt,
 -			  fastrpc_ipa_to_dma_addr(buf->fl->cctx, buf->dma_addr));
@@ -176,7 +189,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	kfree(buf);
  }
  
-@@ -447,7 +525,7 @@
+@@ -493,7 +571,7 @@ static int __fastrpc_buf_alloc(struct fastrpc_user *fl, struct device *dev,
  	buf->dev = dev;
  	buf->raddr = 0;
  
@@ -185,7 +198,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  				       GFP_KERNEL);
  	if (!buf->virt) {
  		mutex_destroy(&buf->lock);
-@@ -455,6 +533,7 @@
+@@ -501,6 +579,7 @@ static int __fastrpc_buf_alloc(struct fastrpc_user *fl, struct device *dev,
  		return -ENOMEM;
  	}
  
@@ -193,7 +206,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	*obuf = buf;
  
  	return 0;
-@@ -472,8 +551,18 @@
+@@ -518,8 +597,18 @@ static int fastrpc_buf_alloc(struct fastrpc_user *fl, struct device *dev,
  
  	buf = *obuf;
  
@@ -213,7 +226,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  
  	return 0;
  }
-@@ -483,6 +572,11 @@
+@@ -529,6 +618,11 @@ static int fastrpc_remote_heap_alloc(struct fastrpc_user *fl, struct device *dev
  {
  	struct device *rdev = &fl->cctx->rpdev->dev;
  
@@ -225,7 +238,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	return  __fastrpc_buf_alloc(fl, rdev, size, obuf);
  }
  
-@@ -764,7 +858,7 @@
+@@ -810,7 +904,7 @@ static int fastrpc_dma_buf_attach(struct dma_buf *dmabuf,
  		return -ENOMEM;
  
  	ret = dma_get_sgtable(buffer->dev, &a->sgt, buffer->virt,
@@ -234,7 +247,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  			      buffer->size);
  	if (ret < 0) {
  		dev_err(buffer->dev, "failed to get scatterlist from DMA API\n");
-@@ -814,7 +908,7 @@
+@@ -860,7 +954,7 @@ static int fastrpc_mmap(struct dma_buf *dmabuf,
  	dma_resv_assert_held(dmabuf->resv);
  
  	return dma_mmap_coherent(buf->dev, vma, buf->virt,
@@ -243,19 +256,19 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  }
  
  static const struct dma_buf_ops fastrpc_dma_buf_ops = {
-@@ -847,6 +941,11 @@
- 
+@@ -894,6 +988,11 @@ static int fastrpc_map_attach(struct fastrpc_user *fl, int fd,
  	INIT_LIST_HEAD(&map->node);
  	kref_init(&map->refcount);
-+
+ 
 +	if (fl->cctx->nabu_sdsp && (attr & FASTRPC_ATTR_SECUREMAP)) {
 +		kfree(map);
 +		return -EOPNOTSUPP;
 +	}
- 
++
  	map->fl = fl;
  	map->fd = fd;
-@@ -883,6 +982,28 @@
+ 	map->buf = dma_buf_get(fd);
+@@ -929,6 +1028,28 @@ static int fastrpc_map_attach(struct fastrpc_user *fl, int fd,
  		err = -EINVAL;
  		goto map_err;
  	}
@@ -284,7 +297,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	map->va = sg_virt(map->table->sgl);
  	map->len = len;
  
-@@ -915,11 +1036,14 @@
+@@ -961,11 +1082,14 @@ static int fastrpc_map_attach(struct fastrpc_user *fl, int fd,
  	return 0;
  
  map_err:
@@ -300,7 +313,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  
  	return err;
  }
-@@ -1254,6 +1378,11 @@
+@@ -1363,6 +1487,11 @@ static int fastrpc_internal_invoke(struct fastrpc_user *fl,  u32 kernel,
  	if (!fl->cctx->rpdev)
  		return -EPIPE;
  
@@ -312,7 +325,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	if (handle == FASTRPC_INIT_HANDLE && !kernel) {
  		dev_warn_ratelimited(fl->sctx->dev, "user app trying to send a kernel RPC message (%d)\n",  handle);
  		return -EPERM;
-@@ -1630,7 +1759,10 @@
+@@ -1740,7 +1869,10 @@ static int fastrpc_device_release(struct inode *inode, struct file *file)
  	struct fastrpc_channel_ctx *cctx = fl->cctx;
  	unsigned long flags;
  
@@ -324,14 +337,14 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  
  	spin_lock_irqsave(&cctx->lock, flags);
  	list_del(&fl->user);
-@@ -1733,7 +1865,21 @@
+@@ -1843,16 +1975,33 @@ static int fastrpc_init_attach(struct fastrpc_user *fl, int pd)
  {
  	struct fastrpc_invoke_args args[1];
  	int client_id = fl->client_id;
 +	long ready;
 +	int ret;
  	u32 sc;
-+
+ 
 +	if (pd == SENSORS_PD && fl->cctx->nabu_sdsp) {
 +		ready = wait_event_interruptible_timeout(fl->cctx->attach_pd_wait,
 +			READ_ONCE(fl->cctx->attach_pd_up) || READ_ONCE(fl->cctx->removing),
@@ -343,10 +356,10 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
 +		if (!ready)
 +			return -ETIMEDOUT;
 +	}
- 
++
  	args[0].ptr = (u64)(uintptr_t) &client_id;
  	args[0].length = sizeof(client_id);
-@@ -1741,8 +1887,11 @@
+ 	args[0].fd = -1;
  	sc = FASTRPC_SCALARS(FASTRPC_RMID_INIT_ATTACH, 1, 0);
  	fl->pd = pd;
  
@@ -359,7 +372,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  }
  
  static int fastrpc_invoke(struct fastrpc_user *fl, char __user *argp)
-@@ -2267,7 +2416,10 @@
+@@ -2410,7 +2559,10 @@ static int fastrpc_cb_probe(struct platform_device *pdev)
  		}
  	}
  	spin_unlock_irqrestore(&cctx->lock, flags);
@@ -371,8 +384,8 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	if (rc) {
  		dev_err(dev, "%u-bit DMA enable failed\n", dma_bits);
  		return rc;
-@@ -2366,6 +2518,62 @@
- 	.dma_addr_bits_default = 32,
+@@ -2533,6 +2685,62 @@ static const struct of_device_id fastrpc_poll_supported_machines[] __maybe_unuse
+ 	{},
  };
  
 +#if IS_REACHABLE(CONFIG_QCOM_PDR_HELPERS)
@@ -434,7 +447,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
  {
  	struct device *rdev = &rpdev->dev;
-@@ -2431,6 +2639,9 @@
+@@ -2598,6 +2806,9 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
  
  	secure_dsp = !(of_property_read_bool(rdev->of_node, "qcom,non-secure-domain"));
  	data->secure = secure_dsp;
@@ -442,9 +455,9 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
 +			 of_machine_is_compatible("xiaomi,nabu");
 +	init_waitqueue_head(&data->attach_pd_wait);
  	data->soc_data = soc_data;
- 
- 	switch (domain_id) {
-@@ -2472,6 +2683,10 @@
+ 	data->poll_mode_supported = soc_data->poll_mode_supported ||
+ 		of_machine_get_match(fastrpc_poll_supported_machines);
+@@ -2642,6 +2853,10 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
  	data->rpdev = rpdev;
  	dev_set_drvdata(&rpdev->dev, data);
  
@@ -455,7 +468,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	err = of_platform_populate(rdev->of_node, NULL, NULL, rdev);
  	if (err)
  		goto err_deregister_fdev;
-@@ -2485,6 +2700,7 @@
+@@ -2655,6 +2870,7 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
  		misc_deregister(&data->secure_fdevice->miscdev);
  
  err_free_data:
@@ -463,7 +476,7 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	kfree(data);
  	return err;
  }
-@@ -2510,10 +2726,14 @@
+@@ -2680,11 +2896,15 @@ static void fastrpc_rpmsg_remove(struct rpmsg_device *rpdev)
  
  	/* No invocations past this point */
  	spin_lock_irqsave(&cctx->lock, flags);
@@ -472,20 +485,10 @@ diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
  	list_for_each_entry(user, &cctx->users, user)
  		fastrpc_notify_users(user);
  	spin_unlock_irqrestore(&cctx->lock, flags);
-+
+ 
 +	wake_up_all(&cctx->attach_pd_wait);
 +	fastrpc_attach_pdr_release(cctx);
- 
++
  	if (cctx->fdevice)
  		misc_deregister(&cctx->fdevice->miscdev);
-diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
---- a/drivers/misc/Kconfig
-+++ b/drivers/misc/Kconfig
-@@ -304,6 +304,7 @@
- 	depends on RPMSG
- 	select DMA_SHARED_BUFFER
- 	select QCOM_SCM
-+	select QCOM_PDR_HELPERS if NET && QRTR
- 	help
- 	  Provides a communication mechanism that allows for clients to
- 	  make remote method invocations across processor boundary to
+ 
