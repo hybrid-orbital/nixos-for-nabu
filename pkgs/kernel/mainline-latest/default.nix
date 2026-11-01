@@ -149,6 +149,26 @@ let
         name = "smp2p-reset-state-only-on-ssr";
         patch = ./patches/0013-soc-qcom-smp2p-reset-state-only-on-ssr.patch;
       }
+      {
+        # 7.3 added rpmh_read() based queries to qcom-rpmh-regulator: probe reads
+        # ENABLE (then VRM_MODE) for every regulator, and get_voltage_sel() has a
+        # read fallback.  On nabu the read never completes, so the first probe
+        # parks forever and 7.3 hangs before the console is up.
+        #
+        # Evidence: the device stays dead for at least 10 minutes with no
+        # progress; rpmh-rsc's free-TCS wait is unbounded
+        # (drivers/soc/qcom/rpmh-rsc.c, wait_event_lock_irq) and this DTB only
+        # has 2 ACTIVE TCS, so two unfinished reads wedge every later RPMH
+        # transaction.  The 7.3.1 tree that does boot on this device
+        # (Kumar-Jy/linux, branch sm8150/7.3.y) carries exactly this removal
+        # locally, while stable linux-7.3.y still has the reads upstream.
+        # See docs/zh_CN/linux-7.3-boot-failure-round3-kumar-comparison.md.
+        #
+        # This is a temporary workaround: drop it once the read path is fixed
+        # for SM8150/PM8150 upstream.
+        name = "nabu-rpmh-regulator-no-read";
+        patch = ./patches/0014-regulator-qcom-rpmh-drop-7.3-read-path.patch;
+      }
     ];
 
     extraConfig = extraConfig;
